@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
 import { Notice } from "./ui";
 import { SourceMap } from "./SourceMap";
+import { ArchitectureReview } from "./ArchitectureReview";
 type Source = {
   path: string;
   language: string;
@@ -104,6 +105,9 @@ export function Intelligence({
     mutationFn: () => api(token, "/repository", { method: "DELETE" }),
     onSuccess: () => {
       cache.removeQueries({ queryKey: ["repository"] });
+      cache.removeQueries({ queryKey: ["architecture-review"] });
+      cache.removeQueries({ queryKey: ["repository-metadata"] });
+      cache.removeQueries({ queryKey: ["git"] });
       void cache.invalidateQueries({ queryKey: ["repo-config"] });
       setSelected("");
       invalidateAssistance();
@@ -546,6 +550,7 @@ export function Intelligence({
                 ))}
             </div>
           </section>
+          <ArchitectureReview token={token} snapshotId={data.id} open={open} />
         </>
       )}
     </div>

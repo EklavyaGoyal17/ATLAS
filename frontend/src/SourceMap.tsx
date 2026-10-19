@@ -97,7 +97,9 @@ export function SourceMap({
       <p className="muted">
         Bounded overview: first 24 type names and 48 declarations. Full
         declaration evidence appears below. Select a type to inspect a field
-        declaration involving it.
+        declaration involving it. Names can be shared across packages; use
+        Architecture review for qualified declarations and conservative
+        resolution.
       </p>
     </>
   );

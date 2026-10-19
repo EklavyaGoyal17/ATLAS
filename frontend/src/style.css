@@ -1854,6 +1854,11 @@ code {
   overflow-wrap: anywhere;
   font-size: 11px;
 }
+.architecture-review .text-button,
+.architecture-review .symbol-list strong {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 .padded details {
   margin: 12px 0;
   min-width: 0;
@@ -1912,7 +1917,7 @@ code {
   display: block;
   min-width: 2px;
   height: 7px;
-  width:100%;
+  width: 100%;
   margin: 12px 0;
 }
 .symbol-list {

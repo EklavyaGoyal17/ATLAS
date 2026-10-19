@@ -215,6 +215,7 @@ class EngineeringIntegrationTest {
         throws Exception {
         for (String path : List.of(
             "/repository/configuration",
+            "/repository/architecture",
             "/assistant/configuration",
             "/workspace/documents",
             "/observability/traces"
@@ -230,6 +231,9 @@ class EngineeringIntegrationTest {
             assertThat(response.statusCode()).isEqualTo(401);
         }
         // No index in this test context: 409 proves the minimal question DTO reached the domain boundary.
+        assertThat(
+            request("GET", "/repository/architecture", "").statusCode()
+        ).isEqualTo(409);
         assertThat(
             request(
                 "POST",

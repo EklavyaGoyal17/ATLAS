@@ -16,18 +16,26 @@ public class RepositoryController {
 
     private final RepositoryIndex index;
     private final RepositoryMetadata metadata;
+    private final RepositoryArchitecture architecture;
 
     public RepositoryController(
         RepositoryIndex index,
-        RepositoryMetadata metadata
+        RepositoryMetadata metadata,
+        RepositoryArchitecture architecture
     ) {
         this.index = index;
         this.metadata = metadata;
+        this.architecture = architecture;
     }
 
     @GetMapping("/metadata")
     public RepositoryMetadata.Report metadata() {
         return metadata.report();
+    }
+
+    @GetMapping("/architecture")
+    public RepositoryArchitecture.Report architecture() {
+        return architecture.report();
     }
 
     @GetMapping("/configuration")

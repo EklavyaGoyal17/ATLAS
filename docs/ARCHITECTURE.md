@@ -41,6 +41,8 @@ Capture debits acquirer receivable and credits merchant payable. Refund reverses
 
 ## Deliberate boundaries
 
+`RepositoryArchitecture` reads one approved redacted snapshot and returns qualified Java declaration references, strongly connected groups and distinct-type coupling counts. Unsupported resolution is skipped, findings carry source lines and snapshot identity, and count/concurrency budgets bound the analysis. It executes no source, classpath discovery, installation or model call. The console offers source navigation and bounded JSON export; [ADR 011](DECISIONS/011-conservative-architecture-review.md) records semantics and limits.
+
 Controlled investigations use independent sample traces and save their bounded evidence atomically with their document. `IncidentArchive` stores at most 128 spans/128000 UTF-8 bytes per investigation in the V5 table; deleting the document cascades to its evidence. Live telemetry remains in memory. The console separates live spans from saved evidence and can reopen/filter/export an investigation after restart. Old records explicitly lack archived spans. [ADR 010](DECISIONS/010-durable-incident-evidence.md) explains retention and transaction boundaries.
 
 No microservices, external broker, Redis, vector database or Kubernetes is needed for the local experiments. OpenTelemetry SDK records real HTTP/JDBC timings in a bounded local exporter, including W3C context across signed loopback webhook calls. Structured logs expose the same correlation IDs. Controlled dependency delays and logical model events are explicitly synthetic. The optional provider interface defaults to local source retrieval and performs no model call without configuration and per-request approval.

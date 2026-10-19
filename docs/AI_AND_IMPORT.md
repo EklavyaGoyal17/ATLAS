@@ -12,6 +12,10 @@ Secret masking and prompt-injection detection are heuristic. Private-key files a
 
 ## No-model mode
 
+The **Architecture review** section analyzes Java field/array-element types and record components from the approved redacted snapshot. Qualified identities, package names, enclosing types and explicit imports prevent unrelated same-named classes from being joined. It reports source-linked mutually reachable dependency groups and fan-in/out counts over distinct types. Five incoming or outgoing types is a review threshold, not a defect or quality grade. Self references are excluded. Search a qualified name, inspect its declaration, and export the bounded graph as JSON.
+
+Limits are explicit: at most 1000 types, 3000 declaration references, 20 groups and 20 coupling candidates, with one analysis running at a time. Per-finding evidence is capped and the report exposes truncation. Malformed/withheld files and unresolved/external field types are counted. Generic arguments, inherited member types, wildcard/static imports and method-only dependencies are unsupported. Results do not prove compilation or runtime calls; no cycles in the resolved subset does not prove an acyclic repository. Snapshot IDs prevent stale reports being shown against a different import. No model, installation or source execution is involved. See ADR 011.
+
 In **AI engineer**, ask a focused question and choose **Find local evidence**. The lexical retriever returns at most five redacted excerpts with file paths and real source ranges. The local investigator lists endpoint/transaction declarations within those excerpts, and potential calls only when both ends have cited lines. It then offers conditional debugging, concurrent-test or design-review steps based on the question. Suggested tests are not executed results; declarations do not prove runtime behavior. This mode makes no model calls. Try “Where is payment authorization transactional?” or “Generate a test plan for concurrent refunds”.
 
 ## Optional API bridge

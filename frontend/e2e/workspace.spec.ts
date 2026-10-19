@@ -60,6 +60,71 @@ test("approved repository, parsed source navigation, local evidence and context 
   await expect(page.getByRole("alert")).toContainText("relative path");
 });
 
+test("architecture review resolves source declarations and exports the approved graph", async ({
+  page,
+}) => {
+  await page
+    .getByRole("button", { name: "Code intelligence", exact: true })
+    .click();
+  await page.getByLabel("I approve reading this repository").check();
+  const imported = page.waitForResponse(
+    (r) =>
+      new URL(r.url()).pathname === "/api/repository/import" &&
+      r.request().method() === "POST",
+  );
+  await page
+    .getByRole("button", { name: "Import repository", exact: true })
+    .click();
+  const snapshot = await (await imported).json();
+  const review = page.getByRole("region", {
+    name: "Architecture review",
+    exact: true,
+  });
+  await expect(review.locator(".architecture-summary")).toContainText(
+    "resolved types",
+    { timeout: 20000 },
+  );
+  await review
+    .getByLabel("Find analyzed type")
+    .fill("dev.atlas.payments.PaymentService");
+  await review.locator(".symbol-list button").first().click();
+  await expect(page.locator(".source-code")).toContainText(
+    "class PaymentService",
+  );
+  const exported = page.waitForEvent("download");
+  await review
+    .getByRole("button", { name: "Export architecture review", exact: true })
+    .click();
+  const report = JSON.parse(
+    await readFile((await (await exported).path())!, "utf8"),
+  );
+  expect(report.snapshotId).toBe(snapshot.id);
+  const service = report.types.find(
+    (t: { name: string }) => t.name === "dev.atlas.payments.PaymentService",
+  );
+  const store = report.types.find(
+    (t: { name: string }) => t.name === "dev.atlas.payments.PaymentStore",
+  );
+  expect(
+    report.relationships.some(
+      (e: { from: string; to: string }) =>
+        e.from === service.id && e.to === store.id,
+    ),
+  ).toBe(true);
+  await review
+    .getByText("Analysis scope and limitations", { exact: true })
+    .click();
+  await expect(review).toContainText(
+    "Parsing does not prove that the source compiles",
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+});
+
 test("stale previews and answers cannot restore consent after a question changes", async ({
   page,
 }) => {

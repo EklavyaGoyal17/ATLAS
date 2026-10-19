@@ -53,6 +53,8 @@ Open Code intelligence, approve relative path `.` and import the read-only check
 
 Verification: parser, path/approval, link, bounds, secret, prompt-injection and XML entity tests; repository browser workflow. Supported call links are hypotheses from syntax and arity, not dynamic call-graph guarantees.
 
+Scroll to Architecture review. Search `dev.atlas.payments.PaymentService`, open its declaration and inspect the exported references to PaymentStore. Review any cycle group as mutually reachable declarations, not a listed execution path. Coupling candidates count distinct incoming/outgoing types and link to field evidence. Inspect unresolved/skipped counts and limitations before interpreting an empty finding list. Export architecture review to retain the bounded graph and snapshot identity. This analysis does not run or install the repository.
+
 ## Demo 5 — Grounded technical review
 
 In AI engineer, ask “Where is payment authorization transactional?” and select Find local evidence. Inspect cited endpoint/transaction declarations, supported potential calls and conditional investigation steps. Ask “Generate a test plan for concurrent refunds” to see proposed race, rollback and lost-response checks; they are suggestions, not completed tests. Preview provider context: no transmission occurs. With no configured provider the action remains disabled. A configured bridge requires matching question/snapshot/context-bound IDs and explicit transmission approval. Edit the question or reimport: previous answers/previews disappear, and late responses cannot restore them. Outage and invalid citations return local evidence. No live model response is presented as verified in this delivery.
