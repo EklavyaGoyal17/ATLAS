@@ -346,5 +346,38 @@ class EngineeringIntegrationTest {
         ) assertThat(result.affected()).allSatisfy(s ->
             assertThat(s.outcome()).isEqualTo("CONTROLLED_FAILURE")
         );
+        if (scenario == IncidentService.Scenario.CONNECTION_EXHAUSTION) {
+            assertThat(result.baseline()).allSatisfy(s ->
+                assertThat(s.outcome()).isEqualTo("OK")
+            );
+            assertThat(result.affected()).allSatisfy(s -> {
+                assertThat(s.outcome()).isEqualTo("POOL_TIMEOUT_RECOVERED");
+                assertThat(s.durationMs()).isGreaterThanOrEqualTo(240);
+                var spans = telemetry
+                    .traces()
+                    .stream()
+                    .filter(t -> t.traceId().equals(s.traceId()))
+                    .toList();
+                assertThat(spans).anyMatch(
+                    t ->
+                        t.name().equals("db.pool.acquire") &&
+                        t.status().equals("ERROR")
+                );
+                assertThat(spans).anyMatch(
+                    t ->
+                        t.name().equals("db.pool.recovered") &&
+                        !t.status().equals("ERROR")
+                );
+            });
+            assertThat(
+                jdbc.queryForObject("SELECT 1", Integer.class)
+            ).isEqualTo(1);
+            assertThat(
+                jdbc.queryForObject(
+                    "SELECT count(*) FROM pg_stat_activity WHERE application_name = 'atlas-incident-probe'",
+                    Integer.class
+                )
+            ).isZero();
+        }
     }
 }

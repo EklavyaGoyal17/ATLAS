@@ -64,16 +64,24 @@ public class IncidentService {
             "INCIDENT_BUSY",
             "One bounded incident investigation can run at a time."
         );
-        try {
+        try (
+            var probe = scenario == Scenario.CONNECTION_EXHAUSTION
+                ? new ConnectionPoolProbe(source, telemetry)
+                : null
+        ) {
             var baseline = new ArrayList<Sample>();
             var affected = new ArrayList<Sample>();
-            for (int i = 0; i < 3; i++) baseline.add(sample(scenario, false));
-            for (int i = 0; i < 3; i++) affected.add(sample(scenario, true));
+            for (int i = 0; i < 3; i++) baseline.add(
+                sample(scenario, false, probe)
+            );
+            for (int i = 0; i < 3; i++) affected.add(
+                sample(scenario, true, probe)
+            );
             String cause = switch (scenario) {
                 case SLOW_QUERY -> "The controlled PostgreSQL query waits 80 ms using pg_sleep.";
                 case LOCK_CONTENTION -> "A second PostgreSQL transaction waits on a held advisory lock until its 100 ms statement deadline.";
                 case DOWNSTREAM_TIMEOUT -> "A local synthetic dependency takes 80 ms; the caller deadline is 20 ms.";
-                case CONNECTION_EXHAUSTION -> "A dedicated one-slot connection bulkhead rejects a second acquire after 60 ms. The application's pool is not exhausted.";
+                case CONNECTION_EXHAUSTION -> "A separate one-connection Hikari/PostgreSQL pool holds its only connection; a second acquire times out after 250 ms. Releasing the lease allows a successful SELECT 1, proving recovery. The application's pool remains available.";
                 case EXCESSIVE_RETRIES -> "Three failed local dependency attempts add work and backoff to one request.";
                 case CACHE_MISSES -> "Invalidating the local cache repeats the controlled 40 ms PostgreSQL lookup.";
                 case QUEUE_BACKLOG -> "Six local queued jobs require sequential 15 ms dependency calls before the queue drains.";
@@ -98,12 +106,22 @@ public class IncidentService {
                 )
             );
             return result;
+        } catch (SQLException ex) {
+            throw new ApiException(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "INCIDENT_SETUP_FAILED",
+                "Could not initialize the isolated PostgreSQL probe."
+            );
         } finally {
             gate.release();
         }
     }
 
-    private Sample sample(Scenario scenario, boolean fault) {
+    private Sample sample(
+        Scenario scenario,
+        boolean fault,
+        ConnectionPoolProbe probe
+    ) {
         var root = telemetry.start(
             "incident." +
                 scenario.name().toLowerCase() +
@@ -112,7 +130,12 @@ public class IncidentService {
         long start = System.nanoTime();
         String outcome = "OK";
         try (var scope = root.makeCurrent()) {
-            if (!fault) {
+            if (probe != null) {
+                outcome = probe.sample(fault);
+                if (fault) root.setStatus(
+                    io.opentelemetry.api.trace.StatusCode.ERROR
+                );
+            } else if (!fault) {
                 jdbc.queryForObject("SELECT 1", Integer.class);
             } else switch (scenario) {
                 case SLOW_QUERY -> jdbc.execute("SELECT pg_sleep(0.08)");
@@ -126,21 +149,9 @@ public class IncidentService {
                 case LOCK_CONTENTION -> contention();
                 case DOWNSTREAM_TIMEOUT -> deadline(80, 20);
                 case MISCONFIGURED_TIMEOUT -> deadline(25, 5);
-                case CONNECTION_EXHAUSTION -> {
-                    var slots = new Semaphore(1);
-                    slots.acquire();
-                    telemetry.measure("bulkhead.connection.acquire", () -> {
-                        try {
-                            if (
-                                !slots.tryAcquire(60, TimeUnit.MILLISECONDS)
-                            ) throw new IllegalStateException("Exhausted");
-                            return 1;
-                        } catch (InterruptedException e) {
-                            Thread.currentThread().interrupt();
-                            throw new IllegalStateException(e);
-                        }
-                    });
-                }
+                case CONNECTION_EXHAUSTION -> throw new IllegalStateException(
+                    "Missing isolated pool"
+                );
                 case EXCESSIVE_RETRIES -> {
                     for (int i = 0; i < 3; i++) {
                         try {
