@@ -668,7 +668,7 @@ paths:
       operationId: approveRepositoryImport
       description: 'Read-only Git root relative to configured allowlist root; approved
         must be true. No repository commands are executed during indexing. Limits:
-        500 source files, 4 MB total, 160 KiB/file, 5000 visited entries, depth 18.'
+        500 source files, 4 MB total, 160000 bytes/file, 5000 visited entries, depth 18.'
       responses:
         '200':
           description: Successful operation
@@ -700,6 +700,49 @@ paths:
               required:
               - path
               - approved
+  /api/repository/github:
+    post:
+      operationId: approvePublicGitHubImport
+      description: Anonymous public GitHub source import after explicit approval. Resolves the default branch to a full commit SHA, validates the single GitHub archive redirect, reads ZIP entries in memory and publishes atomically. No credentials, repository execution, dependency installation or model transmission. Local Git inspection is replaced by commit provenance for this source kind.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [url, approved]
+              properties:
+                url:
+                  type: string
+                  minLength: 1
+                  maxLength: 300
+                  description: Canonical HTTPS github.com/owner/repository root URL, optionally .git or a trailing slash; no credentials, port, query, fragment or branch path.
+                directory:
+                  type: string
+                  maxLength: 200
+                  default: ''
+                  description: Optional exact relative source subfolder. Source paths retain this prefix. Scope does not reduce whole-archive download/decompression limits.
+                approved: {type: boolean, const: true}
+      responses:
+        '200':
+          description: Approved redacted snapshot with pinned source provenance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepositorySnapshot'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Public repository unavailable; private repositories are unsupported
+        '409':
+          description: Import superseded by deletion or another successful import
+        '429':
+          description: GitHub anonymous request denied/rate limited, another download in progress, or local request budget exhausted
+        '502':
+          description: Bounded upstream request, response, archive or redirect validation failed; previous snapshot retained
   /api/repository:
     get:
       operationId: repositorySnapshot
@@ -1440,6 +1483,14 @@ components:
       - title
       - expectedVersion
       - body
+    RepositoryOrigin:
+      type: object
+      properties:
+        kind: {type: string, enum: [LOCAL, GITHUB]}
+        repositoryUrl: {type: string, description: Canonical public GitHub repository URL for GITHUB; empty for LOCAL.}
+        commit: {type: string, description: Pinned full 40-hex commit for GITHUB; empty for LOCAL.}
+        directory: {type: string, description: Selected GitHub subdirectory or empty for the whole repository or LOCAL.}
+      required: [kind, repositoryUrl, commit, directory]
     RepositorySnapshot:
       type: object
       properties:
@@ -1493,6 +1544,8 @@ components:
           type: object
           additionalProperties: *id007
         bytes: *id007
+        origin:
+          $ref: '#/components/schemas/RepositoryOrigin'
       required:
       - id
       - files
@@ -1502,6 +1555,7 @@ components:
       - findings
       - languages
       - bytes
+      - origin
     Ask:
       type: object
       properties:

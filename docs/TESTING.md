@@ -4,9 +4,26 @@ Never substitute H2 for PostgreSQL when testing advisory locks, row locks, const
 
 The dedicated test database must be named `atlas_test`; test setup truncates its business tables only. Flyway initializes it first. CI provisions PostgreSQL 17. Tests verify migration presence, exact response replay after later mutations, concurrency, conflicting payloads, constraints, transaction rollback, authentication, API validation, per-currency reconciliation and persistence across a second application context. A fixed-seed generative loop exercises partial refunds and invariants.
 
-Frontend: TypeScript compilation and Vite production build. Playwright drives the real console against the actual API: connect, create, replay, capture, refund, timeline and ledger. No mocked backend or invented dashboard numbers.
+Frontend: TypeScript compilation and Vite production build. Playwright drives the real console against the actual API for payments, systems, source, incident, design and growth workflows. Four explicitly labeled GitHub UI transport fixtures check consent/state with intercepted import responses; they do not claim real downloads. Actual anonymous GitHub import is checked separately by the operator smoke script. No dashboard measurements are invented.
 
 ## Verification record
+
+### Public GitHub import and general project workspace — started 19 October 2026
+
+All **166 backend cases passed under Java 21 Linux**, with zero failures/errors/skips. Native verification passed 165 and skipped only the Windows-restricted symlink check. The 39 new cases cover anonymous transport/deadline cleanup, strict URL/redirect validation, pinned default-branch provenance, scoped ZIP processing, duplicate/traversal paths, compressed/expanded/entry/source bounds, invalid UTF-8/NUL omissions, redaction, public rate/error handling, concurrency release and superseded downloads. Bridge cases verify general project formats, Java evidence, byte rather than character bounds, origin transitions and audit-failure preservation. HTTP cases check authentication, approval, strict JSON/path bounds and retaining the approved local index after invalid network targets/scopes. No fixture test contacts GitHub.
+
+The first browser attempt passed 36/38 checks and failed an ambiguous alert selector plus a shared-parser contention case. The fixture selector was narrowed to its exact error. The import UI now unmounts old architecture review during import and waits for tracked architecture requests before mounting replacement analysis/manual impact review. No fixed sleep or automatic test retry was added. The rebuilt final console passed the **complete 38-check Chromium/Firefox matrix**: nineteen workflows per browser, including four explicitly labeled GitHub UI transport fixtures. These check changed URL/scope consent, exact payload, full SHA provenance, general project copy, phone layout, failure preservation and late-response discard. Existing real backend workflows also passed. Backend code was unchanged after its complete passing suites; frontend production build and npm audit passed, with zero npm vulnerabilities.
+
+Restart/duplicate suppression, persisted incident evidence, Git history/diff, the five-migration isolated logical restore and all 60 small warm read requests passed. These are not capacity or actual application-data backup claims. The source and final rebuilt API/console image Trivy High/Critical gates passed with zero findings. OpenAPI parses with **40 operations and 180 resolved internal references**; this is not a full conformance validator.
+
+Actual anonymous downloads were then exercised through the running API using `scripts/github-import-check.mjs`. Each verified the source response, full commit provenance, architecture/impact snapshot identity and manifest inventory. Imported code never executed and no provider call occurred. The input revisions below were the public default-branch heads at that check, not fabricated fixtures:
+
+| Repository input | Pinned commit | Supported files / bytes | Resolved Java types / references |
+|---|---|---|---|
+| ATLAS | `899a2c3319670c5f32839aaf133c8bf1c3991586` | 124 / 781067 | 117 / 46 |
+| Forge | `539c0a320df976d9953c2630790b0ea628413d1e` | 105 / 515458 | 146 / 50 |
+
+Local evidence: ignored `.runtime/github-full-verification.log`, `github-final-browser.log`, `github-recovery-restore-live.log` and `github-{source,api,console}-scan.json`. The initial failing browser evidence is retained separately. Hosted execution must be checked against the exact published implementation commit. Private/enterprise repositories, branch selection, broad runtime analysis and live model quality remain outside this adapter's verified scope.
 
 ### Source-linked change impact — 19 October 2026
 

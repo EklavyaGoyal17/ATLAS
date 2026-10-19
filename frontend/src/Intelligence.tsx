@@ -1,5 +1,10 @@
-import { useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
+import {
+  useIsFetching,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { api } from "./api";
 import { Notice } from "./ui";
 import { SourceMap } from "./SourceMap";
@@ -22,6 +27,12 @@ type Symbol = {
 };
 type Snapshot = {
   id: string;
+  origin?: {
+    kind: "LOCAL" | "GITHUB";
+    repositoryUrl: string;
+    commit: string;
+    directory: string;
+  };
   files: Source[];
   symbols: Symbol[];
   edges: {
@@ -44,6 +55,20 @@ type Snapshot = {
   languages: Record<string, number>;
   bytes: number;
 };
+type ImportRequest =
+  | { kind: "LOCAL"; path: string; approved: boolean }
+  | { kind: "GITHUB"; url: string; directory: string; approved: boolean };
+function githubOriginLink(origin: Snapshot["origin"]) {
+  if (
+    origin?.kind !== "GITHUB" ||
+    !/^https:\/\/github\.com\/[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9_.-]+$/.test(
+      origin.repositoryUrl,
+    ) ||
+    !/^[a-f0-9]{40}$/.test(origin.commit)
+  )
+    return null;
+  return `${origin.repositoryUrl}/tree/${origin.commit}`;
+}
 type Context = {
   id: string;
   path: string;
@@ -67,15 +92,26 @@ export function Intelligence({
   const cache = useQueryClient();
   const [path, setPath] = useState(".");
   const [approved, setApproved] = useState(false);
+  const [importSource, setImportSource] = useState<"LOCAL" | "GITHUB">("LOCAL");
+  const [githubUrl, setGithubUrl] = useState("");
+  const [directory, setDirectory] = useState("");
+  const [githubApproved, setGithubApproved] = useState(false);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState("");
   const [line, setLine] = useState(0);
   const [question, setQuestion] = useState(
-    "Where does payment authorization enter the system, and where is its transaction boundary?",
+    "What are the main entry points and declared dependencies in this repository?",
   );
   const [transmit, setTransmit] = useState(false);
   const [preview, setPreview] = useState<Context[] | null>(null);
   const intent = useRef(0);
+  const importIntent = useRef(0);
+  useEffect(
+    () => () => {
+      importIntent.current++;
+    },
+    [],
+  );
   const configuration = useQuery({
     queryKey: ["repo-config"],
     queryFn: () =>
@@ -88,23 +124,47 @@ export function Intelligence({
     retry: false,
   });
   const importRepo = useMutation({
-    onMutate: () => invalidateAssistance(),
-    mutationFn: () =>
-      api<Snapshot>(token, "/repository/import", {
-        method: "POST",
-        body: { path, approved },
-      }),
-    onSuccess: (r) => {
+    onMutate: async () => {
+      const version = ++importIntent.current;
+      invalidateAssistance();
+      await cache.cancelQueries({ queryKey: ["repository"] });
+      return { version };
+    },
+    mutationFn: (request: ImportRequest) =>
+      api<Snapshot>(
+        token,
+        request.kind === "GITHUB" ? "/repository/github" : "/repository/import",
+        {
+          method: "POST",
+          body:
+            request.kind === "GITHUB"
+              ? {
+                  url: request.url,
+                  directory: request.directory,
+                  approved: request.approved,
+                }
+              : { path: request.path, approved: request.approved },
+        },
+      ),
+    onSuccess: (r, _request, context) => {
+      if (context?.version !== importIntent.current) return;
       cache.setQueryData(["repository"], r);
       void cache.invalidateQueries({ queryKey: ["repo-config"] });
       setSelected(r.files[0]?.path ?? "");
+      setLine(0);
       invalidateAssistance();
     },
   });
   const clear = useMutation({
-    onMutate: () => invalidateAssistance(),
+    onMutate: async () => {
+      const version = ++importIntent.current;
+      invalidateAssistance();
+      await cache.cancelQueries({ queryKey: ["repository"] });
+      return { version };
+    },
     mutationFn: () => api(token, "/repository", { method: "DELETE" }),
-    onSuccess: () => {
+    onSuccess: (_result, _variables, context) => {
+      if (context?.version !== importIntent.current) return;
       cache.removeQueries({ queryKey: ["repository"] });
       cache.removeQueries({ queryKey: ["architecture-review"] });
       cache.removeQueries({ queryKey: ["repository-metadata"] });
@@ -160,6 +220,26 @@ export function Intelligence({
       api<{ configured: boolean }>(token, "/assistant/configuration"),
   });
   const data = snapshot.data;
+  const importBusy = importRepo.isPending || clear.isPending;
+  const originLink = githubOriginLink(data?.origin);
+  // Both analyses use the server's bounded architecture gate. An unmounted
+  // query still completes its HTTP request, so wait for that request before
+  // mounting analysis for a replacement snapshot.
+  const architectureRequests = useIsFetching({
+    queryKey: ["architecture-review"],
+  });
+  const supersededArchitectureRequests = useIsFetching({
+    queryKey: ["architecture-review"],
+    predicate: (query) => query.queryKey[1] !== data?.id,
+  });
+  const architectureState = cache.getQueryState<{ snapshotId: string }>([
+    "architecture-review",
+    data?.id,
+  ]);
+  const architectureSettled =
+    architectureRequests === 0 &&
+    (architectureState?.status === "error" ||
+      architectureState?.data?.snapshotId === data?.id);
   const currentAnswer =
     answer.data?.version === intent.current ? answer.data.result : null;
   const metadata = useQuery({
@@ -221,63 +301,210 @@ export function Intelligence({
           provider.error
         }
       />
-      <section className="panel padded">
-        <h2>Approve a local Git workspace</h2>
+      <section className="panel padded repository-import">
+        <h2>Explore a code repository</h2>
         <p>
-          Read-only snapshot of the configured workspace. No builds, scripts,
-          dependency installs, or repository instructions are executed. Files
-          stay local unless you approve a provider request below.
+          Use ATLAS with frontend, backend, library, or full-stack projects.
+          Supported text files, including TypeScript and JavaScript, can be
+          browsed and searched. Structured dependency, cycle, and change-impact
+          analysis currently covers Java. The built-in synthetic payments lab is
+          a separate learning example.
         </p>
-        <div className="form-row">
-          <label>
-            Repository path relative to configured root
+        <fieldset className="repository-import-source" disabled={importBusy}>
+          <legend>Repository source</legend>
+          <label className="check-label">
             <input
-              value={path}
-              maxLength={200}
-              onChange={(e) => {
-                setPath(e.target.value);
+              type="radio"
+              name="repository-source"
+              checked={importSource === "LOCAL"}
+              onChange={() => {
+                setImportSource("LOCAL");
                 setApproved(false);
+                setGithubApproved(false);
+                importRepo.reset();
               }}
             />
+            Local folder
           </label>
           <label className="check-label">
             <input
-              type="checkbox"
-              checked={approved}
-              onChange={(e) => setApproved(e.target.checked)}
+              type="radio"
+              name="repository-source"
+              checked={importSource === "GITHUB"}
+              onChange={() => {
+                setImportSource("GITHUB");
+                setApproved(false);
+                setGithubApproved(false);
+                importRepo.reset();
+              }}
             />
-            I approve reading this repository
+            GitHub link
           </label>
-          <button
-            className="primary"
-            disabled={!approved || importRepo.isPending}
-            onClick={() => importRepo.mutate()}
-          >
-            {importRepo.isPending ? "Indexing…" : "Import repository"}
-          </button>
-        </div>
+        </fieldset>
+        {importSource === "LOCAL" ? (
+          <>
+            <h3>Approve a local Git workspace</h3>
+            <p>
+              Read-only snapshot of the configured workspace. Files stay local
+              unless you separately approve a provider request below.
+            </p>
+            <div className="form-row">
+              <label>
+                Repository path relative to configured root
+                <input
+                  value={path}
+                  maxLength={200}
+                  disabled={importBusy}
+                  onChange={(e) => {
+                    setPath(e.target.value);
+                    setApproved(false);
+                  }}
+                />
+              </label>
+              <label className="check-label">
+                <input
+                  type="checkbox"
+                  checked={approved}
+                  disabled={importBusy}
+                  onChange={(e) => setApproved(e.target.checked)}
+                />
+                I approve reading this repository
+              </label>
+              <button
+                className="primary"
+                disabled={!approved || importBusy}
+                onClick={() =>
+                  importRepo.mutate({ kind: "LOCAL", path, approved })
+                }
+              >
+                {importRepo.isPending ? "Indexing…" : "Import repository"}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <h3>Approve a public GitHub repository</h3>
+            <p>
+              Paste a public repository link such as
+              https://github.com/owner/repository. ATLAS downloads a read-only
+              snapshot of its default branch and records the exact commit. No
+              GitHub API key is needed. Private repositories and personal access
+              tokens are not supported here.
+            </p>
+            <div className="form-row">
+              <label>
+                Public GitHub repository URL
+                <input
+                  type="url"
+                  value={githubUrl}
+                  maxLength={300}
+                  disabled={importBusy}
+                  placeholder="https://github.com/owner/repository"
+                  onChange={(e) => {
+                    setGithubUrl(e.target.value);
+                    setGithubApproved(false);
+                  }}
+                />
+              </label>
+              <label>
+                Repository subdirectory (optional)
+                <input
+                  value={directory}
+                  maxLength={200}
+                  disabled={importBusy}
+                  placeholder="e.g. frontend/src"
+                  onChange={(e) => {
+                    setDirectory(e.target.value);
+                    setGithubApproved(false);
+                  }}
+                />
+              </label>
+            </div>
+            <div className="button-row">
+              <label className="check-label">
+                <input
+                  type="checkbox"
+                  checked={githubApproved}
+                  disabled={importBusy}
+                  onChange={(e) => setGithubApproved(e.target.checked)}
+                />
+                I approve downloading this public repository
+              </label>
+              <button
+                className="primary"
+                disabled={!githubApproved || !githubUrl.trim() || importBusy}
+                onClick={() =>
+                  importRepo.mutate({
+                    kind: "GITHUB",
+                    url: githubUrl,
+                    directory,
+                    approved: githubApproved,
+                  })
+                }
+              >
+                {importRepo.isPending
+                  ? "Downloading and indexing…"
+                  : "Import GitHub repository"}
+              </button>
+            </div>
+            <p className="muted">
+              HTTPS github.com repository links only. Select a subdirectory to
+              limit indexed files in a larger project; source paths retain that
+              prefix. The archive is limited to 16 MiB compressed, 32 MiB
+              expanded, and 5,000 entries, even with a subdirectory selected.
+            </p>
+          </>
+        )}
+        <p>
+          Import reads source only. No builds, scripts, package installs, or
+          repository services are started. Importing makes no external AI
+          request; provider transmission requires separate excerpt approval.
+        </p>
         <p className="muted">
-          500 files · 4 MB total · 160 KiB/file · Java AST analysis; other
+          500 files · 4 MB total · 160,000 bytes/file · Java AST analysis; other
           supported text formats are searchable. Credentials are masked
           heuristically. Review files before sharing.
         </p>
         {data && (
-          <div className="button-row">
-            <span>
-              {data.files.length} files · {data.symbols.length} symbols ·{" "}
-              {data.bytes.toLocaleString()} bytes ·{" "}
-              {Object.entries(data.languages)
-                .map(([k, v]) => `${k}: ${v}`)
-                .join(" / ")}
-            </span>
-            <button
-              className="secondary"
-              disabled={clear.isPending}
-              onClick={() => clear.mutate()}
-            >
-              Delete imported snapshot
-            </button>
-          </div>
+          <>
+            {data.origin?.kind === "GITHUB" && (
+              <div
+                className="repository-origin"
+                aria-label="Imported repository provenance"
+              >
+                <h3>GitHub snapshot provenance</h3>
+                <p>
+                  {originLink ? (
+                    <a href={originLink} target="_blank" rel="noreferrer">
+                      {data.origin.repositoryUrl}
+                    </a>
+                  ) : (
+                    data.origin.repositoryUrl
+                  )}
+                </p>
+                <p>
+                  Commit: <code>{data.origin.commit}</code>
+                </p>
+                <p>Scope: {data.origin.directory || "entire repository"}</p>
+              </div>
+            )}
+            <div className="button-row">
+              <span>
+                {data.files.length} files · {data.symbols.length} symbols ·{" "}
+                {data.bytes.toLocaleString()} bytes ·{" "}
+                {Object.entries(data.languages)
+                  .map(([k, v]) => `${k}: ${v}`)
+                  .join(" / ")}
+              </span>
+              <button
+                className="secondary"
+                disabled={importBusy}
+                onClick={() => clear.mutate()}
+              >
+                Delete imported snapshot
+              </button>
+            </div>
+          </>
         )}
       </section>
       {data && (
@@ -302,18 +529,14 @@ export function Intelligence({
             <div className="button-row">
               <button
                 className="primary"
-                disabled={
-                  answer.isPending || importRepo.isPending || clear.isPending
-                }
+                disabled={answer.isPending || importBusy}
                 onClick={() => answer.mutate(false)}
               >
                 Find local evidence
               </button>
               <button
                 className="secondary"
-                disabled={
-                  review.isPending || importRepo.isPending || clear.isPending
-                }
+                disabled={review.isPending || importBusy}
                 onClick={() => review.mutate()}
               >
                 Preview provider context
@@ -352,8 +575,7 @@ export function Intelligence({
                     !transmit ||
                     !provider.data?.configured ||
                     answer.isPending ||
-                    importRepo.isPending ||
-                    clear.isPending
+                    importBusy
                   }
                   onClick={() => answer.mutate(true)}
                 >
@@ -394,7 +616,7 @@ export function Intelligence({
                 <input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="authorize, transaction, PaymentStore…"
+                  placeholder="controller, component, service…"
                 />
               </label>
               <div className="symbol-list">
@@ -448,7 +670,11 @@ export function Intelligence({
               </pre>
               {selected && (
                 <details>
-                  <summary>Git history and current diff</summary>
+                  <summary>
+                    {data.origin?.kind === "GITHUB"
+                      ? "GitHub snapshot provenance and file scope"
+                      : "Git history and current diff"}
+                  </summary>
                   <pre>{git.data?.history || "No recorded history"}</pre>
                   <pre>
                     {git.data?.changes ||
@@ -551,8 +777,18 @@ export function Intelligence({
                 ))}
             </div>
           </section>
-          <ArchitectureReview token={token} snapshotId={data.id} open={open} />
-          {!importRepo.isPending && !clear.isPending && (
+          {!importBusy && supersededArchitectureRequests === 0 && (
+            <ArchitectureReview
+              key={`${token}:${data.id}`}
+              token={token}
+              snapshotId={data.id}
+              open={open}
+            />
+          )}
+          {!importBusy && supersededArchitectureRequests > 0 && (
+            <p role="status">Finishing the previous repository analysis…</p>
+          )}
+          {!importBusy && architectureSettled && (
             <ChangeImpact
               key={`${token}:${data.id}`}
               token={token}

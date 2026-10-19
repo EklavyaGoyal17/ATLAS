@@ -2073,6 +2073,30 @@ code {
 .change-impact li {
   padding: 5px 0;
 }
+.repository-import-source {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  margin: 18px 0;
+  border: 1px solid #2e404b;
+  border-radius: 8px;
+  padding: 12px 16px;
+}
+.repository-import-source legend {
+  padding: 0 6px;
+}
+.repository-origin {
+  margin: 16px 0;
+  padding: 14px;
+  background: #12212a;
+  border: 1px solid #2e404b;
+  border-radius: 8px;
+}
+.repository-import p,
+.repository-origin code,
+.repository-origin a {
+  overflow-wrap: anywhere;
+}
 .sidebar nav {
   max-height: calc(100vh - 300px);
   overflow-y: auto;

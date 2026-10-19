@@ -96,6 +96,100 @@ class RepositoryImpactIntegrationTest {
     }
 
     @Test
+    void githubImportRequiresAuthenticationApprovalAndStrictRequestBounds()
+        throws Exception {
+        var body = Map.of(
+            "url",
+            "https://github.com/example/project",
+            "directory",
+            "",
+            "approved",
+            false
+        );
+        assertThat(
+            request("/repository/github", body, false).statusCode()
+        ).isEqualTo(401);
+        var unapproved = request("/repository/github", body, true);
+        assertThat(unapproved.statusCode()).isEqualTo(400);
+        assertThat(
+            json.readTree(unapproved.body()).get("code").asString()
+        ).isEqualTo("IMPORT_APPROVAL_REQUIRED");
+        for (Object invalid : List.of(
+            Map.of("approved", false),
+            Map.of("url", " ", "approved", false),
+            Map.of("url", "a".repeat(301), "approved", false),
+            Map.of(
+                "url",
+                "https://github.com/example/project",
+                "directory",
+                "a".repeat(201),
+                "approved",
+                false
+            ),
+            Map.of(
+                "url",
+                "https://github.com/example/project",
+                "approved",
+                false,
+                "token",
+                "not-accepted"
+            )
+        ))
+            assertThat(
+                request("/repository/github", invalid, true).statusCode()
+            ).isEqualTo(400);
+    }
+
+    @Test
+    void githubUnsafeNetworkTargetsAndScopesPreserveTheApprovedLocalIndex()
+        throws Exception {
+        var snapshot = index.index(".", true);
+        for (String url : List.of(
+            "http://github.com/example/project",
+            "https://127.0.0.1/private",
+            "https://github.com.evil.invalid/example/project",
+            "https://token@github.com/example/project",
+            "https://github.com/example/project/tree/main",
+            "https://github.com/example/project?token=value"
+        )) {
+            var result = request(
+                "/repository/github",
+                Map.of("url", url, "approved", true),
+                true
+            );
+            assertThat(result.statusCode()).isEqualTo(400);
+            assertThat(
+                json.readTree(result.body()).get("code").asString()
+            ).isEqualTo("UNSAFE_GITHUB_URL");
+            assertThat(index.current().id()).isEqualTo(snapshot.id());
+        }
+        for (String directory : List.of(
+            "../src",
+            "/src",
+            "src/../other",
+            "src\\other"
+        )) {
+            var result = request(
+                "/repository/github",
+                Map.of(
+                    "url",
+                    "https://github.com/example/project",
+                    "directory",
+                    directory,
+                    "approved",
+                    true
+                ),
+                true
+            );
+            assertThat(result.statusCode()).isEqualTo(400);
+            assertThat(
+                json.readTree(result.body()).get("code").asString()
+            ).isEqualTo("UNSAFE_GITHUB_DIRECTORY");
+            assertThat(index.current().id()).isEqualTo(snapshot.id());
+        }
+    }
+
+    @Test
     void requiresAuthenticationAndAnApprovedSnapshot() throws Exception {
         var body = Map.of(
             "snapshotId",

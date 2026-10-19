@@ -19,6 +19,19 @@ import org.springframework.stereotype.Service;
 @Service
 public class RepositoryIndex {
 
+    public record Origin(
+        String kind,
+        String repositoryUrl,
+        String commit,
+        String directory
+    ) {
+        static Origin local() {
+            return new Origin("LOCAL", "", "", "");
+        }
+    }
+
+    public record RemoteFile(String path, String content) {}
+
     public record Source(
         String path,
         String language,
@@ -62,8 +75,36 @@ public class RepositoryIndex {
         List<Call> calls,
         List<String> findings,
         Map<String, Long> languages,
-        long bytes
-    ) {}
+        long bytes,
+        Origin origin
+    ) {
+        public Snapshot {
+            if (origin == null) origin = Origin.local();
+        }
+
+        public Snapshot(
+            UUID id,
+            List<Source> files,
+            List<Symbol> symbols,
+            List<Edge> edges,
+            List<Call> calls,
+            List<String> findings,
+            Map<String, Long> languages,
+            long bytes
+        ) {
+            this(
+                id,
+                files,
+                symbols,
+                edges,
+                calls,
+                findings,
+                languages,
+                bytes,
+                Origin.local()
+            );
+        }
+    }
 
     private static final Set<String> EXCLUDED = Set.of(
         ".git",
@@ -93,12 +134,169 @@ public class RepositoryIndex {
         "yml",
         "json",
         "css",
-        "properties"
+        "properties",
+        "py",
+        "pyi",
+        "go",
+        "rs",
+        "c",
+        "h",
+        "cpp",
+        "hpp",
+        "cs",
+        "kt",
+        "kts",
+        "rb",
+        "php",
+        "swift",
+        "html",
+        "scss",
+        "vue",
+        "svelte",
+        "toml",
+        "txt",
+        "mdx",
+        "sh"
     );
     private final Path configuredRoot;
     private final Documents documents;
     private volatile Snapshot snapshot;
     private volatile Path approvedRoot;
+    private long revision;
+
+    static boolean supportedPath(String path) {
+        if (path == null || path.isEmpty()) return false;
+        var parts = path.split("/", -1);
+        for (String part : parts) {
+            if (
+                part.isEmpty() ||
+                part.startsWith(".") ||
+                EXCLUDED.contains(part)
+            ) return false;
+        }
+        String name = parts[parts.length - 1];
+        if (
+            name
+                .toLowerCase(Locale.ROOT)
+                .matches(".*(?:secret|credential|password|private|lock).*")
+        ) return false;
+        int dot = name.lastIndexOf('.');
+        return (
+            dot >= 0 &&
+            EXTENSIONS.contains(
+                name.substring(dot + 1).toLowerCase(Locale.ROOT)
+            )
+        );
+    }
+
+    synchronized long importRevision() {
+        return revision;
+    }
+
+    /** Publishes bounded archive text atomically; archive paths never address the filesystem. */
+    synchronized Snapshot indexRemote(
+        long expectedRevision,
+        List<RemoteFile> rawFiles,
+        Origin origin
+    ) {
+        return indexRemote(expectedRevision, rawFiles, origin, List.of());
+    }
+
+    synchronized Snapshot indexRemote(
+        long expectedRevision,
+        List<RemoteFile> rawFiles,
+        Origin origin,
+        List<String> importFindings
+    ) {
+        if (revision != expectedRevision) throw new ApiException(
+            HttpStatus.CONFLICT,
+            "IMPORT_SUPERSEDED",
+            "The import was superseded by deletion or another repository import."
+        );
+        if (rawFiles.isEmpty() || rawFiles.size() > 500) reject(
+            "Remote snapshot must contain 1 to 500 supported files."
+        );
+        var files = new ArrayList<Source>();
+        var symbols = new ArrayList<Symbol>();
+        var edges = new ArrayList<Edge>();
+        var findings = new ArrayList<String>(importFindings);
+        var seen = new HashSet<String>();
+        long bytes = 0;
+        for (var raw : rawFiles) {
+            String path = raw.path();
+            if (
+                !supportedPath(path) ||
+                path.contains("\\") ||
+                path.contains(":") ||
+                path.chars().anyMatch(c -> c < 32) ||
+                !seen.add(path)
+            ) reject("Unsafe or duplicate remote snapshot path.");
+            int size = raw.content().getBytes(StandardCharsets.UTF_8).length;
+            if (
+                size > 160000 ||
+                raw.content().indexOf('\0') >= 0 ||
+                (bytes += size) > 4_000_000
+            ) reject("Remote snapshot exceeds source text bounds.");
+            String ext = path
+                .substring(path.lastIndexOf('.') + 1)
+                .toLowerCase(Locale.ROOT);
+            files.add(source(path, ext, raw.content()));
+            if (ext.equals("java")) parse(
+                path,
+                raw.content(),
+                symbols,
+                edges,
+                findings
+            );
+            if (raw.content().split("\\R", -1).length > 500) findings.add(
+                path +
+                    ": large file; consider responsibility boundaries (heuristic)."
+            );
+        }
+        files.sort(Comparator.comparing(Source::path));
+        var languages = new TreeMap<String, Long>();
+        files.forEach(f -> languages.merge(f.language(), 1L, Long::sum));
+        var names = new HashSet<String>();
+        symbols
+            .stream()
+            .filter(s -> s.kind().equals("type"))
+            .forEach(s -> names.add(s.name()));
+        edges.removeIf(e -> !names.contains(e.to()));
+        var next = new Snapshot(
+            UUID.randomUUID(),
+            List.copyOf(files),
+            List.copyOf(symbols),
+            List.copyOf(edges),
+            calls(files),
+            List.copyOf(findings),
+            languages,
+            bytes,
+            origin
+        );
+        documents.audit("REPOSITORY_GITHUB_APPROVED", next.id().toString());
+        approvedRoot = null;
+        revision++;
+        snapshot = next;
+        return next;
+    }
+
+    private static Source source(String path, String ext, String content) {
+        String safe = Redaction.mask(content);
+        var warnings = new ArrayList<String>();
+        if (!safe.equals(content)) warnings.add(
+            "Potential credentials masked; heuristic detection cannot guarantee all secrets are found."
+        );
+        if (Redaction.injection(content)) warnings.add(
+            "Instruction-like content is untrusted source data, never an instruction."
+        );
+        return new Source(
+            path,
+            ext,
+            safe.split("\\R", -1).length,
+            safe,
+            List.copyOf(warnings)
+        );
+    }
 
     public RepositoryIndex(
         @Value("${atlas.repository-root:..}") String root,
@@ -189,7 +387,9 @@ public class RepositoryIndex {
                         );
                         String name = path.getFileName().toString();
                         String ext = name.contains(".")
-                            ? name.substring(name.lastIndexOf('.') + 1)
+                            ? name
+                                  .substring(name.lastIndexOf('.') + 1)
+                                  .toLowerCase(Locale.ROOT)
                             : "";
                         if (
                             !attrs.isRegularFile() ||
@@ -308,6 +508,7 @@ public class RepositoryIndex {
             );
             documents.audit("REPOSITORY_APPROVED", next.id().toString());
             approvedRoot = root;
+            revision++;
             snapshot = next;
             return next;
         } catch (IOException e) {
@@ -619,11 +820,30 @@ public class RepositoryIndex {
     public synchronized void clear() {
         snapshot = null;
         approvedRoot = null;
+        revision++;
         documents.audit("REPOSITORY_DELETED", "local-index");
     }
 
     public Map<String, String> git(String path) {
-        file(path);
+        var current = current();
+        if (
+            current
+                .files()
+                .stream()
+                .noneMatch(f -> f.path().equals(path))
+        ) throw new ApiException(
+            HttpStatus.NOT_FOUND,
+            "FILE_NOT_INDEXED",
+            "File is outside the indexed snapshot."
+        );
+        if (current.origin().kind().equals("GITHUB")) return Map.of(
+            "history",
+            "GitHub source snapshot at commit " +
+                current.origin().commit() +
+                ". History was not downloaded.",
+            "changes",
+            "This is an immutable source archive; no local working-tree diff is available."
+        );
         Path root = approvedRoot;
         if (root == null) reject("No approved repository.");
         return Map.of(
@@ -668,7 +888,7 @@ public class RepositoryIndex {
                 "-c",
                 "log.showSignature=false",
                 "-c",
-                "safe.directory="+root.toString(),
+                "safe.directory=" + root.toString(),
                 "-C",
                 root.toString()
             )

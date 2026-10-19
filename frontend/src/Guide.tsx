@@ -22,7 +22,7 @@ export function Guide() {
     [
       "04",
       "Use the smallest reliable boundary.",
-      "One application and one database make this journey understandable. A separate worker uses durable outbox/inbox records and three commit boundaries. Repository indexing and AI remain future milestones.",
+      "One application and one database make this journey understandable. A separate worker uses durable outbox/inbox records and three commit boundaries. Read-only repository analysis and source-linked investigations help you inspect those choices.",
       "Which demonstrated requirement would justify a message broker?",
     ],
   ];
@@ -52,6 +52,22 @@ export function Guide() {
           </article>
         ))}
       </div>
+      <article className="panel guide-card">
+        <h2>Bring your own project</h2>
+        <p>
+          Code intelligence works with an approved local folder or public GitHub
+          repository link. Explore frontend, backend, library, and full-stack
+          source. Browse supported text formats and inspect declared manifest
+          dependencies; Java also has structured source analysis, dependency
+          cycles, and possible change impact.
+        </p>
+        <p>
+          Importing reads source without running its services or install
+          scripts. Local evidence works without an AI API key. The payments and
+          systems labs are built-in experiments you can use alongside any
+          imported project.
+        </p>
+      </article>
       <div className="local-notice">
         <LockKeyhole size={18} />
         <p>

@@ -49,6 +49,8 @@ Run CONNECTION_EXHAUSTION to saturate a separate real one-slot PostgreSQL pool. 
 
 ## Demo 4 — Understand the ATLAS codebase
 
+Alternative public-source entry: choose **GitHub link**, paste `https://github.com/EklavyaGoyal17/Forge`, approve downloading and select **Import GitHub repository**. Confirm the pinned commit and source scope before browsing. No GitHub API key is required; rate limits and whole-archive bounds can still reject an import. This explores Forge source and never starts its experiments. Local-folder steps below still work. GITHUB_IMPORT describes other languages and subdirectory selection.
+
 Open Code intelligence, approve relative path `.` and import the read-only checkout. Search `authorize`. Open the endpoint symbol in PaymentController, then follow the source-supported potential call to PaymentService.authorize and its Transactional boundary. Inspect PaymentStore declarations and the type graph, then cross-check actual HTTP/JDBC trace evidence. Review manifest dependencies and maintainability findings. The published checkout now has real commits; select a file to inspect its bounded history and any tracked working-tree diff. Try `../outside` and verify rejection. No source builds or scripts execute.
 
 Verification: parser, path/approval, link, bounds, secret, prompt-injection and XML entity tests; repository browser workflow. Supported call links are hypotheses from syntax and arity, not dynamic call-graph guarantees.

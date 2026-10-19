@@ -14,6 +14,12 @@ public class RepositoryController {
         boolean approved
     ) {}
 
+    public record GitHubImport(
+        @NotBlank @Size(max = 300) String url,
+        @Size(max = 200) String directory,
+        boolean approved
+    ) {}
+
     public record ImpactRequest(
         @NotNull UUID snapshotId,
         @NotEmpty @Size(max = 20) List<@NotBlank @Size(max = 300) String> paths
@@ -23,17 +29,20 @@ public class RepositoryController {
     private final RepositoryMetadata metadata;
     private final RepositoryArchitecture architecture;
     private final RepositoryImpact impact;
+    private final GitHubRepositoryImport github;
 
     public RepositoryController(
         RepositoryIndex index,
         RepositoryMetadata metadata,
         RepositoryArchitecture architecture,
-        RepositoryImpact impact
+        RepositoryImpact impact,
+        GitHubRepositoryImport github
     ) {
         this.index = index;
         this.metadata = metadata;
         this.architecture = architecture;
         this.impact = impact;
+        this.github = github;
     }
 
     @GetMapping("/metadata")
@@ -61,6 +70,17 @@ public class RepositoryController {
     @PostMapping("/import")
     public RepositoryIndex.Snapshot read(@Valid @RequestBody Import request) {
         return index.index(request.path(), request.approved());
+    }
+
+    @PostMapping("/github")
+    public RepositoryIndex.Snapshot github(
+        @Valid @RequestBody GitHubImport request
+    ) {
+        return github.importRepository(
+            request.url(),
+            request.directory(),
+            request.approved()
+        );
     }
 
     @GetMapping
