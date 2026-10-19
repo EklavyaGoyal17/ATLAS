@@ -59,6 +59,8 @@ jobs:
         env:
           ATLAS_API_TOKEN: atlas-local-development-token-change-me
         run: node scripts/git-evidence-check.mjs
+      - name: Verify PostgreSQL logical backup and restore using synthetic fixtures
+        run: node scripts/restore-drill.mjs
       - name: Scan the actual API runtime image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:

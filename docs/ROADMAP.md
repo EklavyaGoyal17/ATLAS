@@ -22,6 +22,6 @@ All seven module areas have implementations in the local single-user platform. T
 - Connection-budget saturation, dependency delays, logical compensation/cache/breaker/SLO models are labeled synthetic. They do not prove real pool exhaustion, broker failover, global quotas, multi-region consistency or production capacity.
 - The signed HTTP receiver uses loopback only. External webhook destinations remain unsupported; destination approval/SSRF, independent signing keys, external retries and receiver idempotency need a separate adapter.
 - Java analysis is conservative and syntax based. Other allowed formats are searchable; ambiguous types/overloads, dynamic dispatch and actual branch execution remain unknown. Masking cannot guarantee all secrets are found. Keep the approved checkout stable.
-- Telemetry resets on JVM restart; investigations/records persist. Backup restore drills, larger workloads, broad browser testing, penetration testing and manual assistive-technology review remain operating work.
+- Telemetry resets on JVM restart; investigations/records persist. An isolated logical restore of generated fixtures now verifies schema/data, constraints, identity sequences and revision cascades. Actual application-backup restoration, encrypted/off-machine retention, larger workloads, broad browser testing, penetration testing and manual assistive-technology review remain operating work.
 
 No destructive reset or external deployment runs automatically. REQUIREMENTS maps the original request to source, demonstrations, tests and limitations.

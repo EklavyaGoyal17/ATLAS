@@ -9,4 +9,5 @@ frontend/test-results/
 .idea/
 .vscode/
 *.zip
+*.dump
 frontend/tsconfig.tsbuildinfo

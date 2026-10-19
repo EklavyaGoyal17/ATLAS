@@ -8,6 +8,10 @@ Frontend: TypeScript compilation and Vite production build. Playwright drives th
 
 ## Verification record
 
+### Continuation — isolated logical backup and restore
+
+`node scripts/restore-drill.mjs` passed locally on 19 October 2026 against PostgreSQL 17.11. Four migrations and generated payment/ledger, replay, leased outbox, consumer/webhook receipt, worker-clock and journal/revision fixtures were dumped and restored in a new network-isolated tmpfs container. Restored rows matched; ledger totals balanced; unique capture rejection, identity-sequence advancement and revision deletion cascades passed. Cleanup verified the container's per-run labels. No existing application/test database or volume was accessed. This additional drill is separate from the 88 backend test cases and does not validate actual application backups or production disaster recovery. See RECOVERY.
+
 ### Current full workspace verification — 19 October 2026
 
 Executed against Docker Engine 29.5.3, PostgreSQL 17.11, the real nginx console, Node 24.13.1, native Java 25.0.3 and the separate Temurin Java 21 Linux test runner. The complete verification entry point passed. Focused checks were repeated after the final Git trust-boundary and frontend refinements. No hosted CI result or live model result is implied.

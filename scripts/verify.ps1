@@ -32,6 +32,7 @@ try {
     finally { Pop-Location }
     Invoke-AtlasCheck 'API container restart and duplicate suppression' { node scripts/recovery-check.mjs }
     Invoke-AtlasCheck 'real Git history and tracked diff' { node scripts/git-evidence-check.mjs }
+    Invoke-AtlasCheck 'isolated PostgreSQL logical backup and restore' { node scripts/restore-drill.mjs }
     Invoke-AtlasCheck 'bounded read-endpoint latency observations' { node scripts/workspace-load.mjs }
     Write-Host 'All verification stages passed. Local Compose application remains available at http://127.0.0.1:5173.'
 } finally {
