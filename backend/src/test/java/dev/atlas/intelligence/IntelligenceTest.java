@@ -212,4 +212,59 @@ class IntelligenceTest {
             assistant.ask("authorize", true, true, ids)
         ).hasMessageContaining("approve");
     }
+
+    @Test
+    void consentIsBoundToTheQuestionAndSnapshotEvenWhenExcerptsMatch()
+        throws Exception {
+        index.index(".", true);
+        var provider = mock(ModelProvider.class);
+        var assistant = new AssistantService(index, provider, documents);
+        var question = "authorize transaction";
+        var ids = assistant
+            .retrieve(question)
+            .stream()
+            .map(ModelProvider.Context::id)
+            .toList();
+        assertThat(
+            assistant
+                .retrieve(question)
+                .stream()
+                .map(ModelProvider.Context::id)
+                .toList()
+        ).isEqualTo(ids);
+        assertThatThrownBy(() ->
+            assistant.ask(question + "?", true, true, ids)
+        ).hasMessageContaining("approve");
+        index.index(".", true);
+        assertThatThrownBy(() ->
+            assistant.ask(question, true, true, ids)
+        ).hasMessageContaining("approve");
+        verify(provider, never()).explain(anyString(), anyList());
+    }
+
+    @Test
+    void localInvestigationUsesCitedDeclarationsAndProposesUnexecutedTests()
+        throws Exception {
+        index.index(".", true);
+        var provider = mock(ModelProvider.class);
+        var assistant = new AssistantService(index, provider, documents);
+        var result = assistant.ask(
+            "Test concurrent authorize transaction requests",
+            false,
+            false,
+            List.of()
+        );
+        assertThat(result.answer()).contains(
+            "endpoint declaration: authorize at Example.java:4",
+            "transaction declaration: authorize",
+            "Potential call: Example.authorize → Store.save",
+            "proxy invocation",
+            "Synchronize competing requests",
+            "not executed results"
+        );
+        assertThat(result.citations()).allSatisfy(c ->
+            assertThat(index.file(c.path()).content()).contains(c.text())
+        );
+        verifyNoInteractions(provider);
+    }
 }

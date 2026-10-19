@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
 import { Notice } from "./ui";
@@ -73,6 +73,7 @@ export function Intelligence({
   );
   const [transmit, setTransmit] = useState(false);
   const [preview, setPreview] = useState<Context[] | null>(null);
+  const intent = useRef(0);
   const configuration = useQuery({
     queryKey: ["repo-config"],
     queryFn: () =>
@@ -85,6 +86,7 @@ export function Intelligence({
     retry: false,
   });
   const importRepo = useMutation({
+    onMutate: () => invalidateAssistance(),
     mutationFn: () =>
       api<Snapshot>(token, "/repository/import", {
         method: "POST",
@@ -94,32 +96,33 @@ export function Intelligence({
       cache.setQueryData(["repository"], r);
       void cache.invalidateQueries({ queryKey: ["repo-config"] });
       setSelected(r.files[0]?.path ?? "");
-      setPreview(null);
+      invalidateAssistance();
     },
   });
   const clear = useMutation({
+    onMutate: () => invalidateAssistance(),
     mutationFn: () => api(token, "/repository", { method: "DELETE" }),
     onSuccess: () => {
       cache.removeQueries({ queryKey: ["repository"] });
       void cache.invalidateQueries({ queryKey: ["repo-config"] });
       setSelected("");
-      setPreview(null);
-      answer.reset();
+      invalidateAssistance();
     },
   });
   const git = useQuery({
-    queryKey: ["git", selected],
+    queryKey: ["git", snapshot.data?.id, selected],
     queryFn: () =>
       api<{ history: string; changes: string }>(
         token,
         `/repository/git?path=${encodeURIComponent(selected)}`,
       ),
-    enabled: !!selected,
+    enabled: !!snapshot.data && !!selected,
     retry: false,
   });
   const answer = useMutation({
-    mutationFn: (remote: boolean) =>
-      api<Answer>(token, "/assistant", {
+    mutationFn: async (remote: boolean) => {
+      const version = intent.current;
+      const result = await api<Answer>(token, "/assistant", {
         method: "POST",
         body: {
           question,
@@ -127,16 +130,22 @@ export function Intelligence({
           approved: remote && transmit,
           approvedIds: preview?.map((c) => c.id) ?? [],
         },
-      }),
+      });
+      return { result, version };
+    },
   });
   const review = useMutation({
-    mutationFn: () =>
-      api<Context[]>(token, "/assistant/preview", {
+    mutationFn: async () => {
+      const version = intent.current;
+      const result = await api<Context[]>(token, "/assistant/preview", {
         method: "POST",
         body: { question },
-      }),
+      });
+      return { result, version };
+    },
     onSuccess: (r) => {
-      setPreview(r);
+      if (r.version !== intent.current) return;
+      setPreview(r.result);
       setTransmit(false);
     },
   });
@@ -146,6 +155,8 @@ export function Intelligence({
       api<{ configured: boolean }>(token, "/assistant/configuration"),
   });
   const data = snapshot.data;
+  const currentAnswer =
+    answer.data?.version === intent.current ? answer.data.result : null;
   const metadata = useQuery({
     queryKey: ["repository-metadata", data?.id],
     queryFn: () =>
@@ -164,6 +175,13 @@ export function Intelligence({
     retry: false,
   });
   const file = data?.files.find((f) => f.path === selected);
+  function invalidateAssistance() {
+    intent.current++;
+    setPreview(null);
+    setTransmit(false);
+    answer.reset();
+    review.reset();
+  }
   const symbols =
     data?.symbols
       .filter((s) =>
@@ -193,7 +211,9 @@ export function Intelligence({
           clear.error ||
           git.error ||
           answer.error ||
-          review.error
+          review.error ||
+          metadata.error ||
+          provider.error
         }
       />
       <section className="panel padded">
@@ -270,22 +290,25 @@ export function Intelligence({
                 maxLength={1500}
                 onChange={(e) => {
                   setQuestion(e.target.value);
-                  setPreview(null);
-                  setTransmit(false);
+                  invalidateAssistance();
                 }}
               />
             </label>
             <div className="button-row">
               <button
                 className="primary"
-                disabled={answer.isPending}
+                disabled={
+                  answer.isPending || importRepo.isPending || clear.isPending
+                }
                 onClick={() => answer.mutate(false)}
               >
                 Find local evidence
               </button>
               <button
                 className="secondary"
-                disabled={review.isPending}
+                disabled={
+                  review.isPending || importRepo.isPending || clear.isPending
+                }
                 onClick={() => review.mutate()}
               >
                 Preview provider context
@@ -321,7 +344,11 @@ export function Intelligence({
                 <button
                   className="secondary"
                   disabled={
-                    !transmit || !provider.data?.configured || answer.isPending
+                    !transmit ||
+                    !provider.data?.configured ||
+                    answer.isPending ||
+                    importRepo.isPending ||
+                    clear.isPending
                   }
                   onClick={() => answer.mutate(true)}
                 >
@@ -329,16 +356,16 @@ export function Intelligence({
                 </button>
               </div>
             )}
-            {answer.data && (
+            {currentAnswer && (
               <div className="answer" aria-live="polite">
-                <strong>{answer.data.mode}</strong>
-                <p className="preserve-lines">{answer.data.answer}</p>
-                {answer.data.uncertainty.map((u) => (
+                <strong>{currentAnswer.mode}</strong>
+                <p className="preserve-lines">{currentAnswer.answer}</p>
+                {currentAnswer.uncertainty.map((u) => (
                   <p className="callout" key={u}>
                     {u}
                   </p>
                 ))}
-                {answer.data.citations.map((c) => (
+                {currentAnswer.citations.map((c) => (
                   <details key={c.id} open>
                     <summary>
                       <button

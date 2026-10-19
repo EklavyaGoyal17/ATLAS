@@ -853,7 +853,7 @@ paths:
     post:
       operationId: engineeringAssistant
       description: No model by default. Provider transmission requires useProvider=true,
-        approved=true and exact content-hashed citation IDs from preview; provider
+        approved=true and exact question/snapshot/content-bound citation IDs from preview; provider
         failure or invalid citations returns local evidence.
       responses:
         '200':
@@ -921,7 +921,7 @@ paths:
   /api/observability/incidents:
     post:
       operationId: controlledInvestigation
-      description: Authenticated local engineering workspace operation
+      description: Bounded controlled investigation; connection exhaustion uses an isolated one-slot PostgreSQL pool.
       responses:
         '200':
           description: Successful operation
@@ -929,6 +929,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Investigation'
+        '503':
+          description: Isolated database probe initialization unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':

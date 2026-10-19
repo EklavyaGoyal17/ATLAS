@@ -12,7 +12,7 @@ Secret masking and prompt-injection detection are heuristic. Private-key files a
 
 ## No-model mode
 
-In **AI engineer**, ask a focused question and choose **Find local evidence**. The lexical retriever returns at most five redacted excerpts with file paths, real source ranges and content-hashed IDs. This mode makes no model calls and does not invent explanations. Try “Where is payment authorization transactional?” or “What stops duplicate captures?”. The source exists in the snapshot; its meaning still needs review.
+In **AI engineer**, ask a focused question and choose **Find local evidence**. The lexical retriever returns at most five redacted excerpts with file paths and real source ranges. The local investigator lists endpoint/transaction declarations within those excerpts, and potential calls only when both ends have cited lines. It then offers conditional debugging, concurrent-test or design-review steps based on the question. Suggested tests are not executed results; declarations do not prove runtime behavior. This mode makes no model calls. Try “Where is payment authorization transactional?” or “Generate a test plan for concurrent refunds”.
 
 ## Optional API bridge
 
@@ -26,7 +26,7 @@ The endpoint receives `POST` JSON:
 
 It must return `{"answer":"...","citationIds":["S<sha256>"]}`. Use an adapter for your chosen model API; never put an API key in the browser. Redirects are disabled, connection/request/body deadlines are bounded, responses are capped at 16 KiB, answers at 8000 characters and concurrent calls at two. The app exposes no arbitrary command, mutation, file or network tools to a provider. Unavailable providers and invalid citation IDs return local evidence. Citations are checked for identity, not semantic correctness. Live provider quality is not verified by the contract tests.
 
-Before each call, choose **Preview provider context**, inspect the exact excerpts, then check the transmission approval and ask the provider. The server requires matching content-hashed IDs; changed context invalidates prior approval. Merely configuring an endpoint never sends source. Engineering journal/incident record bodies are not part of retrieval. Metadata-only audit records identify approved imports, deletion and model transmissions.
+Before each call, choose **Preview provider context**, inspect the exact excerpts, then check the transmission approval and ask the provider. IDs hash the exact question, snapshot identity, path, range and content using length-prefixed fields. Changing the question, reimporting even unchanged files, or changing an excerpt invalidates prior approval. Retrieval, local facts and the transmission audit use one immutable snapshot. The browser discards pending previews/answers when the question or import changes and keys Git results by snapshot. Merely configuring an endpoint never sends source. Engineering journal/incident record bodies are not part of retrieval. Metadata-only audit records identify approved imports, deletion and model transmissions.
 
 ## Optional local Ollama bridge
 

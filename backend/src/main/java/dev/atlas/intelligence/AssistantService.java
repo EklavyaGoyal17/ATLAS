@@ -47,6 +47,13 @@ public class AssistantService {
     }
 
     public List<ModelProvider.Context> retrieve(String question) {
+        return retrieve(index.current(), question);
+    }
+
+    private List<ModelProvider.Context> retrieve(
+        RepositoryIndex.Snapshot snapshot,
+        String question
+    ) {
         var words = new HashSet<>(
             List.of(question.toLowerCase(Locale.ROOT).split("[^a-z0-9_]+"))
         );
@@ -80,7 +87,7 @@ public class AssistantService {
         if (words.contains("authorization")) words.add("authorize");
         record Candidate(ModelProvider.Context context, int score) {}
         var candidates = new ArrayList<Candidate>();
-        for (var source : index.current().files()) {
+        for (var source : snapshot.files()) {
             if (
                 source
                     .warnings()
@@ -118,7 +125,13 @@ public class AssistantService {
                 if (score > 0) candidates.add(
                     new Candidate(
                         new ModelProvider.Context(
-                            sourceId(source.path(), start, text),
+                            sourceId(
+                                snapshot.id().toString(),
+                                question,
+                                source.path(),
+                                Integer.toString(start),
+                                text
+                            ),
                             source.path(),
                             start + 1,
                             end,
@@ -148,7 +161,9 @@ public class AssistantService {
         boolean approved,
         List<String> approvedIds
     ) {
-        var context = retrieve(question);
+        // Use one immutable snapshot for retrieval, local facts and transmission audit.
+        var snapshot = index.current();
+        var context = retrieve(snapshot, question);
         var uncertainty = new ArrayList<>(
             List.of(
                 "Source snapshots may be stale. Declared dependencies do not prove runtime call paths. Validate hypotheses with tests and traces.",
@@ -156,6 +171,8 @@ public class AssistantService {
             )
         );
         if (!useProvider) return fallback(
+            snapshot,
+            question,
             context,
             uncertainty,
             "Deterministic source evidence; no model used."
@@ -175,25 +192,28 @@ public class AssistantService {
             "Preview the exact retrieved source IDs and approve this transmission first."
         );
         if (context.isEmpty()) return fallback(
+            snapshot,
+            question,
             context,
             uncertainty,
             "No relevant safe evidence found; no provider request sent."
         );
         if (!provider.configured()) return fallback(
+            snapshot,
+            question,
             context,
             uncertainty,
             "Provider is not configured; local evidence remains available."
         );
         if (!gate.tryAcquire()) return fallback(
+            snapshot,
+            question,
             context,
             uncertainty,
             "Provider busy; local evidence remains available."
         );
         try {
-            documents.audit(
-                "MODEL_TRANSMISSION",
-                index.current().id().toString()
-            );
+            documents.audit("MODEL_TRANSMISSION", snapshot.id().toString());
             var completion = provider.explain(
                 Redaction.mask(question),
                 context
@@ -220,6 +240,8 @@ public class AssistantService {
             );
         } catch (Exception e) {
             return fallback(
+                snapshot,
+                question,
                 context,
                 uncertainty,
                 "Provider unavailable or invalid citations; local evidence remains available."
@@ -230,6 +252,8 @@ public class AssistantService {
     }
 
     private Answer fallback(
+        RepositoryIndex.Snapshot snapshot,
+        String question,
         List<ModelProvider.Context> context,
         List<String> uncertainty,
         String reason
@@ -239,22 +263,23 @@ public class AssistantService {
             "\n\n" +
             (context.isEmpty()
                 ? "No matching safe source excerpts. Try a specific class, method, exception or concept."
-                : "Inspect the cited excerpts below. They are the evidence retrieved for this question; no generated explanation or inferred call relationship is asserted.");
+                : LocalInvestigator.explain(snapshot, question, context));
         return new Answer("LOCAL_EVIDENCE", text, context, uncertainty);
     }
 
-    private String sourceId(String path, int line, String text) {
+    private String sourceId(String... values) {
         try {
-            return (
-                "S" +
-                HexFormat.of().formatHex(
-                    java.security.MessageDigest.getInstance("SHA-256").digest(
-                        (path + "|" + line + "|" + text).getBytes(
-                            java.nio.charset.StandardCharsets.UTF_8
-                        )
-                    )
-                )
-            );
+            var digest = java.security.MessageDigest.getInstance("SHA-256");
+            for (String value : values) {
+                var bytes = value.getBytes(
+                    java.nio.charset.StandardCharsets.UTF_8
+                );
+                digest.update(
+                    java.nio.ByteBuffer.allocate(4).putInt(bytes.length).array()
+                );
+                digest.update(bytes);
+            }
+            return "S" + HexFormat.of().formatHex(digest.digest());
         } catch (java.security.NoSuchAlgorithmException e) {
             throw new IllegalStateException(e);
         }
