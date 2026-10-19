@@ -4,6 +4,7 @@ import { api } from "./api";
 import { Notice } from "./ui";
 import { SourceMap } from "./SourceMap";
 import { ArchitectureReview } from "./ArchitectureReview";
+import { ChangeImpact } from "./ChangeImpact";
 type Source = {
   path: string;
   language: string;
@@ -551,6 +552,15 @@ export function Intelligence({
             </div>
           </section>
           <ArchitectureReview token={token} snapshotId={data.id} open={open} />
+          {!importRepo.isPending && !clear.isPending && (
+            <ChangeImpact
+              key={`${token}:${data.id}`}
+              token={token}
+              snapshotId={data.id}
+              files={data.files}
+              open={open}
+            />
+          )}
         </>
       )}
     </div>

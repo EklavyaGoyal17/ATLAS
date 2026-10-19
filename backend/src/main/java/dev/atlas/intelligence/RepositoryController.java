@@ -14,18 +14,26 @@ public class RepositoryController {
         boolean approved
     ) {}
 
+    public record ImpactRequest(
+        @NotNull UUID snapshotId,
+        @NotEmpty @Size(max = 20) List<@NotBlank @Size(max = 300) String> paths
+    ) {}
+
     private final RepositoryIndex index;
     private final RepositoryMetadata metadata;
     private final RepositoryArchitecture architecture;
+    private final RepositoryImpact impact;
 
     public RepositoryController(
         RepositoryIndex index,
         RepositoryMetadata metadata,
-        RepositoryArchitecture architecture
+        RepositoryArchitecture architecture,
+        RepositoryImpact impact
     ) {
         this.index = index;
         this.metadata = metadata;
         this.architecture = architecture;
+        this.impact = impact;
     }
 
     @GetMapping("/metadata")
@@ -36,6 +44,13 @@ public class RepositoryController {
     @GetMapping("/architecture")
     public RepositoryArchitecture.Report architecture() {
         return architecture.report();
+    }
+
+    @PostMapping("/impact")
+    public RepositoryImpact.Report impact(
+        @Valid @RequestBody ImpactRequest request
+    ) {
+        return impact.report(request.snapshotId(), request.paths());
     }
 
     @GetMapping("/configuration")

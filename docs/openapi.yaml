@@ -1131,6 +1131,45 @@ paths:
           $ref: '#/components/responses/Conflict'
         '429':
           description: Analysis or local request budget exhausted
+  /api/repository/impact:
+    post:
+      operationId: repositoryChangeImpact
+      description: Reverse reachability through the bounded approved Java declaration graph. One deterministic shortest source-evidence path per dependent type; no runtime blast-radius, test-coverage or defect assertion. Shares the architecture-analysis concurrency budget.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [snapshotId, paths]
+              properties:
+                snapshotId: {type: string, format: uuid}
+                paths:
+                  type: array
+                  minItems: 1
+                  maxItems: 20
+                  items: {type: string, minLength: 1, maxLength: 300}
+                  description: Exact paths in the approved snapshot. Duplicates count toward the request limit and are deduplicated in the report.
+      responses:
+        '200':
+          description: Bounded change-review candidates with explicit omitted evidence and scope
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangeImpactReport'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: NO_INDEX or STALE_SNAPSHOT; refresh and select from the approved snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Architecture analysis or local request budget exhausted
 components:
   securitySchemes:
     bearerAuth:
@@ -1566,6 +1605,56 @@ components:
         path: {type: string}
         line: {type: integer, minimum: 1}
       required: [from, to, path, line]
+    ArchitectureDeclaration:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        path: {type: string}
+        line: {type: integer, minimum: 1}
+        fanIn: {type: integer, minimum: 0}
+        fanOut: {type: integer, minimum: 0}
+      required: [id, name, path, line, fanIn, fanOut]
+    ChangeImpactReport:
+      type: object
+      properties:
+        snapshotId: {type: string, format: uuid}
+        selectedPaths: {type: array, maxItems: 20, items: {type: string}}
+        seeds:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: '#/components/schemas/ArchitectureDeclaration'
+        affected:
+          type: array
+          maxItems: 200
+          items:
+            type: object
+            properties:
+              type:
+                $ref: '#/components/schemas/ArchitectureDeclaration'
+              distance: {type: integer, minimum: 1}
+              changedTypeId: {type: string}
+              path:
+                type: array
+                maxItems: 20
+                items:
+                  $ref: '#/components/schemas/ArchitectureReference'
+                description: Edges start at the candidate and proceed toward its selected seed. A truncated path ends before that seed; distance retains the full shortest length.
+              pathTruncated: {type: boolean}
+            required: [type, distance, changedTypeId, path, pathTruncated]
+        totalAffected: {type: integer, minimum: 0, maximum: 1000}
+        unrepresentedPaths: {type: array, maxItems: 20, items: {type: string}}
+        unresolvedFields: {type: integer, minimum: 0}
+        skippedFiles: {type: integer, minimum: 0}
+        graphTruncated:
+          type: boolean
+          description: Inherits the architecture report flag, including cycle/coupling display caps; not a precise classification of missing graph facts.
+        resultsTruncated:
+          type: boolean
+          description: More than 200 candidates, or at least one returned evidence path exceeds 20 edges.
+        limitations: {type: array, items: {type: string}}
+      required: [snapshotId, selectedPaths, seeds, affected, totalAffected, unrepresentedPaths, unresolvedFields, skippedFiles, graphTruncated, resultsTruncated, limitations]
     ArchitectureReview:
       type: object
       properties:
@@ -1574,15 +1663,7 @@ components:
           type: array
           maxItems: 1000
           items:
-            type: object
-            properties:
-              id: {type: string}
-              name: {type: string}
-              path: {type: string}
-              line: {type: integer, minimum: 1}
-              fanIn: {type: integer, minimum: 0}
-              fanOut: {type: integer, minimum: 0}
-            required: [id, name, path, line, fanIn, fanOut]
+            $ref: '#/components/schemas/ArchitectureDeclaration'
         relationships:
           type: array
           maxItems: 3000

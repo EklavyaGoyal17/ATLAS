@@ -2048,6 +2048,31 @@ code {
   border-bottom: 1px solid #2e404b;
   padding: 14px 0;
 }
+.change-impact,
+.change-impact summary,
+.change-impact button,
+.impact-files span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.impact-files {
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 10px;
+  margin: 12px 0;
+  border: 1px solid #2e404b;
+  border-radius: 8px;
+}
+.impact-files .check-label {
+  align-items: flex-start;
+  margin: 8px 0;
+}
+.impact-files input {
+  flex-shrink: 0;
+}
+.change-impact li {
+  padding: 5px 0;
+}
 .sidebar nav {
   max-height: calc(100vh - 300px);
   overflow-y: auto;
