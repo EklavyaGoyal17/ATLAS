@@ -5,7 +5,10 @@ export default defineConfig({
   workers: 1,
   timeout: 30000,
   use: { baseURL: "http://127.0.0.1:5173", trace: "retain-on-failure" },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    { name: "firefox", use: { ...devices["Desktop Firefox"] } },
+  ],
   webServer:
     process.env.ATLAS_E2E_EXTERNAL === "true"
       ? undefined

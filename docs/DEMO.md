@@ -45,6 +45,8 @@ Open Observability. Run SLOW_QUERY: three baseline and three affected measuremen
 
 Verification: every incident recipe runs in EngineeringIntegrationTest; the real browser investigation saves a postmortem. TelemetryTest checks bounded retention while preserving lifetime counters. A saved investigation keeps sample evidence across restart, but its in-memory child traces expire.
 
+Run CONNECTION_EXHAUSTION to saturate a separate real one-slot PostgreSQL pool. Each affected sample reports POOL_TIMEOUT_RECOVERED: inspect the failed db.pool.acquire span (250 ms timeout) and successful db.pool.recovered span after releasing the connection. The application pool remains available; the probe pool closes after the investigation. This verifies a controlled local pool boundary, without claiming application-wide exhaustion.
+
 ## Demo 4 — Understand the ATLAS codebase
 
 Open Code intelligence, approve relative path `.` and import the read-only checkout. Search `authorize`. Open the endpoint symbol in PaymentController, then follow the source-supported potential call to PaymentService.authorize and its Transactional boundary. Inspect PaymentStore declarations and the type graph, then cross-check actual HTTP/JDBC trace evidence. Review manifest dependencies and maintainability findings. The published checkout now has real commits; select a file to inspect its bounded history and any tracked working-tree diff. Try `../outside` and verify rejection. No source builds or scripts execute.
@@ -53,7 +55,7 @@ Verification: parser, path/approval, link, bounds, secret, prompt-injection and 
 
 ## Demo 5 — Grounded technical review
 
-In AI engineer, ask “Where is payment authorization transactional?” and select Find local evidence. Inspect actual file/line excerpts and explicit uncertainty. Preview provider context: no transmission occurs. With no configured provider the action remains disabled and the tool remains useful. A configured bridge additionally requires per-request approval of the exact content-hashed source IDs; changed source invalidates consent. Outage and invalid citations return local evidence. No live model response is presented as verified in this delivery.
+In AI engineer, ask “Where is payment authorization transactional?” and select Find local evidence. Inspect cited endpoint/transaction declarations, supported potential calls and conditional investigation steps. Ask “Generate a test plan for concurrent refunds” to see proposed race, rollback and lost-response checks; they are suggestions, not completed tests. Preview provider context: no transmission occurs. With no configured provider the action remains disabled. A configured bridge requires matching question/snapshot/context-bound IDs and explicit transmission approval. Edit the question or reimport: previous answers/previews disappear, and late responses cannot restore them. Outage and invalid citations return local evidence. No live model response is presented as verified in this delivery.
 
 Verification: consent, redaction, instruction isolation, changed context, provider outage and invalid-citation tests; real local stub transport; browser source citations. See AI_AND_IMPORT for optional API/Ollama setup. Technical review mode in Engineering growth also saves answers against an explicit evidence rubric; its term coverage is not a correctness grade.
 

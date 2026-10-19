@@ -8,6 +8,16 @@ Frontend: TypeScript compilation and Vite production build. Playwright drives th
 
 ## Verification record
 
+### Phase 4/6/8 follow-up — 19 October 2026
+
+The native backend suite passed all 95 cases with zero failures/errors and one Windows-restricted symlink skip. The Java 21 Linux suite passed all 95 with zero skips. New checks bind approval to the exact question and snapshot even when excerpts are unchanged, restrict local investigation facts/call targets to cited ranges, and exercise a real one-slot Hikari/PostgreSQL pool: three 250 ms acquisition timeouts, successful recovery queries, ERROR acquisition spans and cleanup of probe connections. The application's pool remains separate.
+
+All **24 browser checks passed** against the actual rebuilt Compose app: twelve workflows each in Chromium and Firefox. Added flows inspect real pool timeout/recovery traces and delay actual API responses while editing the question, verifying late previews/answers cannot restore old consent or results. The delayed-response test forwards the actual backend payload unchanged; it does not fabricate evidence. Reimport clears existing answers and approval. Existing payment, ledger, worker, source, diagram, incident, journal and webhook flows also passed in both browsers.
+
+The complete `scripts/verify.ps1` pipeline passed, including actual API restart/duplicate suppression, persistent journal and cleared in-memory index checks, bounded Git history/diff inspection and the isolated synthetic logical restore drill. All 60 measured read requests returned 200; p95 was 37.33 ms for payments, 34.55 ms for documents and 11.70 ms for metrics. These small warm local samples do not establish capacity.
+
+The TypeScript/production build and npm audit passed (zero reported vulnerabilities). Source and both rebuilt runtime-image Trivy High/Critical gates passed with zero findings. The API reference check passed with 36 operations and 157 resolved internal references. No model/provider credentials, live model execution or source transmission to an AI provider were involved. Browser installation and both projects are included in the local verification script and hosted CI configuration; hosted results for this follow-up must be checked against its exact commit.
+
 ### Publication and transport/recovery hardening — 19 October 2026
 
 The implementation was committed and pushed to `EklavyaGoyal17/ATLAS`. The [corrected hosted workflow](https://github.com/EklavyaGoyal17/ATLAS/actions/runs/39224956418) passed both jobs: Java 21/backend verification, ten real-Compose browser workflows, npm audit, API restart, Git evidence, both runtime-image scans and the separate source vulnerability scan. Its backend snapshot had 88 test cases. The first published run had passed its verification job but failed source dependency discovery with Maven Central HTTP 429; this was an infrastructure failure, not a passing vulnerability result. Resolving with Maven's restored cache and using offline dependency identification fixed the source gate without disabling vulnerability database updates or severity failures.

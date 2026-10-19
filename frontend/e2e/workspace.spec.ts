@@ -36,6 +36,9 @@ test("approved repository, parsed source navigation, local evidence and context 
     .getByRole("button", { name: "Find local evidence", exact: true })
     .click();
   await expect(page.locator(".answer")).toContainText("LOCAL_EVIDENCE");
+  await expect(page.locator(".answer")).toContainText(
+    "Suggested investigation",
+  );
   await expect(page.locator(".answer details").first()).toBeVisible();
   await page
     .getByRole("button", { name: "Preview provider context", exact: true })
@@ -54,6 +57,115 @@ test("approved repository, parsed source navigation, local evidence and context 
     .getByRole("button", { name: "Import repository", exact: true })
     .click();
   await expect(page.getByRole("alert")).toContainText("relative path");
+});
+
+test("stale previews and answers cannot restore consent after a question changes", async ({
+  page,
+}) => {
+  await page
+    .getByRole("button", { name: "Code intelligence", exact: true })
+    .click();
+  await page.getByLabel("I approve reading this repository").check();
+  await Promise.all([
+    page.waitForResponse(
+      (r) => new URL(r.url()).pathname === "/api/repository/import",
+    ),
+    page
+      .getByRole("button", { name: "Import repository", exact: true })
+      .click(),
+  ]);
+  await expect(
+    page.getByRole("heading", { name: "Symbols & files" }),
+  ).toBeVisible({ timeout: 20000 });
+
+  for (const endpoint of ["/api/assistant/preview", "/api/assistant"]) {
+    let release!: () => void;
+    let ready!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fetched = new Promise<void>((resolve) => {
+      ready = resolve;
+    });
+    await page.route(`**${endpoint}`, async (route) => {
+      const response = await route.fetch(); // Keep the real API result; delay only delivery.
+      ready();
+      await held;
+      await route.fulfill({ response });
+    });
+    const arrived = page.waitForResponse(
+      (r) => new URL(r.url()).pathname === endpoint,
+    );
+    await page
+      .getByRole("button", {
+        name: endpoint.endsWith("preview")
+          ? "Preview provider context"
+          : "Find local evidence",
+        exact: true,
+      })
+      .click();
+    await fetched;
+    await page
+      .getByLabel("Engineering question")
+      .fill(`New authorize transaction question ${endpoint}`);
+    release();
+    await (await arrived).finished();
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    await expect(page.locator(".context-preview")).toHaveCount(0);
+    await expect(page.locator(".answer")).toHaveCount(0);
+    await page.unroute(`**${endpoint}`);
+  }
+  await page
+    .getByRole("button", { name: "Preview provider context", exact: true })
+    .click();
+  await expect(page.locator(".context-preview")).toBeVisible();
+  await page
+    .getByRole("checkbox", { name: "I approve sending this question" })
+    .check();
+  await page
+    .getByRole("button", { name: "Find local evidence", exact: true })
+    .click();
+  await expect(page.locator(".answer")).toBeVisible();
+  await Promise.all([
+    page.waitForResponse(
+      (r) => new URL(r.url()).pathname === "/api/repository/import",
+    ),
+    page
+      .getByRole("button", { name: "Import repository", exact: true })
+      .click(),
+  ]);
+  await expect(page.locator(".answer")).toHaveCount(0);
+  await expect(page.locator(".context-preview")).toHaveCount(0);
+});
+
+test("real isolated connection pool times out and recovers with trace evidence", async ({
+  page,
+}) => {
+  await page
+    .getByRole("button", { name: "Observability", exact: true })
+    .click();
+  await page
+    .getByLabel("Incident scenario")
+    .selectOption("CONNECTION_EXHAUSTION");
+  await page
+    .getByRole("button", { name: "Run investigation", exact: true })
+    .click();
+  await expect(page.locator(".trace-sample")).toHaveCount(6);
+  await expect(
+    page.locator(".trace-sample").filter({ hasText: "POOL_TIMEOUT_RECOVERED" }),
+  ).toHaveCount(3);
+  await page
+    .locator(".trace-sample")
+    .filter({ hasText: "POOL_TIMEOUT_RECOVERED" })
+    .first()
+    .click();
+  await expect(page.locator(".trace-list")).toContainText("db.pool.acquire");
+  await expect(page.locator(".trace-list")).toContainText("db.pool.recovered");
 });
 test("measured incident, trace selection and persistent postmortem", async ({
   page,

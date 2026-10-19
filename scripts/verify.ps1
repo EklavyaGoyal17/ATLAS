@@ -24,7 +24,7 @@ try {
         Invoke-AtlasCheck 'locked frontend dependencies' { npm.cmd ci }
         Invoke-AtlasCheck 'frontend TypeScript and production build' { npm.cmd run build }
         Invoke-AtlasCheck 'frontend dependency audit' { npm.cmd audit --audit-level=high }
-        Invoke-AtlasCheck 'Chromium availability' { npx.cmd playwright install chromium }
+        Invoke-AtlasCheck 'Chromium and Firefox availability' { npx.cmd playwright install chromium firefox }
     } finally { Pop-Location }
     Invoke-AtlasCheck 'Compose images and health' { docker compose --env-file .env.example up --build -d --wait db api console }
     Push-Location (Join-Path $atlasRoot 'frontend')

@@ -36,7 +36,7 @@ jobs:
         working-directory: frontend
       - run: npm audit --audit-level=high
         working-directory: frontend
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install --with-deps chromium firefox
         working-directory: frontend
       - name: Build and start the real Compose application
         run: |
