@@ -24,6 +24,14 @@ type Incident = {
   validation: string;
   scope: string;
 };
+type Evidence = {
+  id: string;
+  available: boolean;
+  investigation: Incident | null;
+  spans: Span[];
+  truncated: boolean;
+  scope: string;
+};
 const scenarios = [
   "SLOW_QUERY",
   "LOCK_CONTENTION",
@@ -36,13 +44,23 @@ const scenarios = [
 ];
 export function Observability({ token }: { token: string }) {
   const cache = useQueryClient();
-  const docs = useDocuments(token, 0, "INCIDENT");
+  const [archivePage, setArchivePage] = useState(0);
+  const docs = useDocuments(token, archivePage, "INCIDENT");
   const [scenario, setScenario] = useState("SLOW_QUERY");
   const [incident, setIncident] = useState<Incident | null>(null);
   const [trace, setTrace] = useState("");
   const [hypothesis, setHypothesis] = useState("");
   const [resolution, setResolution] = useState("");
   const [saved, setSaved] = useState(false);
+  const [source, setSource] = useState<"live" | "saved">("live");
+  const evidence = useQuery({
+    queryKey: ["incident-evidence", incident?.id],
+    queryFn: () =>
+      api<Evidence>(token, `/observability/incidents/${incident!.id}/evidence`),
+    enabled: !!incident,
+    retry: false,
+  });
+  const currentIncident = evidence.data?.investigation ?? incident;
   const metrics = useQuery({
     queryKey: ["metrics"],
     queryFn: () =>
@@ -71,12 +89,18 @@ export function Observability({ token }: { token: string }) {
       }),
     onSuccess: (r) => {
       setIncident(r);
+      setSource("saved");
       setTrace(r.affected[0].traceId);
       setSaved(false);
+      setHypothesis("");
+      setResolution("");
+      setArchivePage(0);
       void cache.invalidateQueries();
     },
   });
-  const visible = (spans.data ?? [])
+  const visible = (
+    source === "saved" ? (evidence.data?.spans ?? []) : (spans.data ?? [])
+  )
     .filter((s) => !trace || s.traceId === trace)
     .slice(0, 100);
   return (
@@ -87,7 +111,9 @@ export function Observability({ token }: { token: string }) {
           spans.error ||
           worker.error ||
           inject.error ||
-          docs.save.error
+          docs.save.error ||
+          docs.query.error ||
+          evidence.error
         }
       />
       <div className="stats">
@@ -106,7 +132,7 @@ export function Observability({ token }: { token: string }) {
               ? Number(metrics.data.requestsPerSecond).toFixed(2)
               : "—"
           }
-          caption="Retained requests / observation time"
+          caption="Lifetime requests / observation time"
           icon={Activity}
         />
         <Stat
@@ -129,8 +155,8 @@ export function Observability({ token }: { token: string }) {
         {metrics.data
           ? `${(Number(metrics.data.errorRate) * 100).toFixed(1)}%`
           : "—"}
-        . Telemetry stays in this JVM and resets on restart; saved
-        investigations persist.
+        . Live telemetry resets on restart. Saved investigations and their
+        bounded span evidence persist in PostgreSQL.
       </p>
       <section className="panel padded">
         <div className="panel-heading">
@@ -162,37 +188,73 @@ export function Observability({ token }: { token: string }) {
             {inject.isPending ? "Measuring…" : "Run investigation"}
           </button>
         </div>
-        <div className="button-row">
-          {docs.query.data
-            ?.filter((d) => d.kind === "INCIDENT")
-            .slice(0, 8)
-            .map((d) => (
-              <button
-                className="secondary"
-                key={d.id}
-                onClick={() => {
-                  setIncident(d.body as unknown as Incident);
-                  setTrace("");
-                  setSaved(false);
-                }}
-              >
-                {d.title.replace("Investigation: ", "")}
-              </button>
+        <label>
+          Saved investigation
+          <select
+            value={
+              docs.query.data?.some((d) => d.id === incident?.id)
+                ? incident?.id
+                : ""
+            }
+            onChange={(e) => {
+              const record = docs.query.data?.find(
+                (d) => d.id === e.target.value,
+              );
+              if (!record) return;
+              setIncident(record.body as unknown as Incident);
+              setSource("saved");
+              setTrace("");
+              setSaved(false);
+              setHypothesis("");
+              setResolution("");
+            }}
+          >
+            <option value="">Choose an investigation</option>
+            {docs.query.data?.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.title.replace("Investigation: ", "")} ·{" "}
+                {timestamp(d.updatedAt)} · {d.id.slice(0, 8)}
+              </option>
             ))}
+          </select>
+        </label>
+        <div className="button-row">
+          <button
+            className="secondary"
+            disabled={archivePage === 0 || docs.query.isFetching}
+            onClick={() => setArchivePage((p) => p - 1)}
+          >
+            Previous investigations
+          </button>
+          <span>Investigation page {archivePage + 1} of at most 5</span>
+          <button
+            className="secondary"
+            disabled={
+              archivePage === 4 ||
+              docs.query.data?.length !== 200 ||
+              docs.query.isFetching
+            }
+            onClick={() => setArchivePage((p) => p + 1)}
+          >
+            Next investigations
+          </button>
         </div>
-        {incident && (
+        {currentIncident && (
           <div className="module-stack">
-            <p className="callout">{incident.scope}</p>
-            <h3>{incident.scenario}</h3>
+            <p className="callout">{currentIncident.scope}</p>
+            <h3>{currentIncident.scenario}</h3>
             <div className="two-columns">
               {(["baseline", "affected"] as const).map((kind) => (
                 <div key={kind}>
                   <h3>{kind}</h3>
-                  {incident[kind].map((s, i) => (
+                  {currentIncident[kind].map((s, i) => (
                     <button
                       key={i}
                       className="trace-sample"
-                      onClick={() => setTrace(s.traceId)}
+                      onClick={() => {
+                        setSource("saved");
+                        setTrace(s.traceId);
+                      }}
                     >
                       <span>
                         Sample {i + 1} · {s.outcome}
@@ -205,8 +267,8 @@ export function Observability({ token }: { token: string }) {
               ))}
             </div>
             <h3>Injection evidence</h3>
-            <p>{incident.hypothesis}</p>
-            <p>{incident.validation}</p>
+            <p>{currentIncident.hypothesis}</p>
+            <p>{currentIncident.validation}</p>
             <label>
               Your root-cause hypothesis
               <textarea
@@ -231,13 +293,13 @@ export function Observability({ token }: { token: string }) {
                   {
                     id: crypto.randomUUID(),
                     kind: "POSTMORTEM",
-                    title: `Postmortem: ${incident.scenario}`,
+                    title: `Postmortem: ${currentIncident.scenario}`,
                     version: 0,
                     body: {
-                      incidentId: incident.id,
+                      incidentId: currentIncident.id,
                       hypothesis,
                       resolution,
-                      evidence: incident.affected,
+                      evidence: currentIncident.affected,
                     },
                   },
                   { onSuccess: () => setSaved(true) },
@@ -251,10 +313,15 @@ export function Observability({ token }: { token: string }) {
             )}
             <button
               className="secondary"
+              disabled={evidence.isPending || evidence.isError}
               onClick={() =>
                 download(
                   "atlas-incident.json",
-                  JSON.stringify(incident, null, 2),
+                  JSON.stringify(
+                    { ...evidence.data, investigation: currentIncident },
+                    null,
+                    2,
+                  ),
                 )
               }
             >
@@ -265,6 +332,41 @@ export function Observability({ token }: { token: string }) {
       </section>
       <section className="panel padded">
         <h2>Trace explorer</h2>
+        <div className="button-row">
+          <button
+            className="secondary"
+            onClick={() => {
+              setSource("live");
+              setTrace("");
+            }}
+          >
+            Show live spans
+          </button>
+          <button
+            className="secondary"
+            disabled={!incident}
+            onClick={() => {
+              setSource("saved");
+              setTrace("");
+            }}
+          >
+            Show saved evidence
+          </button>
+        </div>
+        <p className="trace-source" aria-live="polite">
+          {source === "saved"
+            ? "Saved investigation evidence"
+            : "Live JVM telemetry"}
+        </p>
+        {source === "saved" && (
+          <p className="callout">
+            {evidence.isPending
+              ? "Loading saved evidence…"
+              : evidence.data?.scope}
+            {evidence.data?.truncated &&
+              " The saved evidence was truncated to its retention budget."}
+          </p>
+        )}
         <label>
           Trace ID filter
           <input
@@ -274,7 +376,7 @@ export function Observability({ token }: { token: string }) {
           />
         </label>
         <button className="secondary" onClick={() => setTrace("")}>
-          Show all spans
+          Show all {source === "saved" ? "saved" : "live"} spans
         </button>
         <div className="trace-list">
           {visible.map((s) => (
@@ -291,19 +393,31 @@ export function Observability({ token }: { token: string }) {
                 </small>
               </button>
               <div>
-                <svg className="duration-bar" viewBox="0 0 100 7" aria-hidden="true"><rect width={Math.min(100,Math.max(2,s.durationMs))} height="7" fill="#62ccb1"/></svg>
+                <svg
+                  className="duration-bar"
+                  viewBox="0 0 100 7"
+                  aria-hidden="true"
+                >
+                  <rect
+                    width={Math.min(100, Math.max(2, s.durationMs))}
+                    height="7"
+                    fill="#62ccb1"
+                  />
+                </svg>
                 {s.durationMs.toFixed(2)} ms
               </div>
             </div>
           ))}
           {!visible.length && (
             <p>
-              No retained spans match. Saved investigations retain sample
-              evidence after a JVM restart.
+              No spans match this source and filter. Older investigations may
+              predate saved span evidence; expired spans cannot be
+              reconstructed.
             </p>
           )}
         </div>
         <p className="muted">
+          At most 100 matching spans are shown; exports include all saved spans.
           Span names use static route families. SQL text and request bodies are
           excluded. Correlation IDs match structured API logs available through{" "}
           <code>docker compose logs api</code>.

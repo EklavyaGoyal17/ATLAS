@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { readFile } from "node:fs/promises";
 const token =
   process.env.ATLAS_E2E_TOKEN ?? "atlas-local-development-token-change-me";
 test.beforeEach(async ({ page }) => {
@@ -198,6 +199,77 @@ test("measured incident, trace selection and persistent postmortem", async ({
       .filter({ hasText: "Postmortem: SLOW_QUERY" })
       .first(),
   ).toBeVisible();
+});
+
+test("saved investigation evidence can be reopened, filtered and exported after reload", async ({
+  page,
+}) => {
+  await page
+    .getByRole("button", { name: "Observability", exact: true })
+    .click();
+  const created = page.waitForResponse(
+    (r) =>
+      new URL(r.url()).pathname === "/api/observability/incidents" &&
+      r.request().method() === "POST",
+  );
+  await page
+    .getByRole("button", { name: "Run investigation", exact: true })
+    .click();
+  const investigation = await (await created).json();
+  await expect(page.locator(".trace-source")).toHaveText(
+    "Saved investigation evidence",
+  );
+  await expect(page.locator(".trace-list")).toContainText("db.query");
+  const downloaded = page.waitForEvent("download");
+  await page
+    .getByRole("button", { name: "Export investigation", exact: true })
+    .click();
+  const evidence = JSON.parse(
+    await readFile((await (await downloaded).path())!, "utf8"),
+  );
+  expect(evidence.id).toBe(investigation.id);
+  expect(evidence.available).toBe(true);
+  expect(
+    new Set(evidence.spans.map((s: { traceId: string }) => s.traceId)).size,
+  ).toBe(6);
+  await page.reload();
+  await page.getByLabel("Workspace token").fill(token);
+  await page.getByRole("button", { name: "Open workspace" }).click();
+  await page
+    .getByRole("button", { name: "Observability", exact: true })
+    .click();
+  await page
+    .getByRole("combobox", { name: "Saved investigation", exact: true })
+    .selectOption(investigation.id);
+  await expect(page.locator(".trace-source")).toHaveText(
+    "Saved investigation evidence",
+  );
+  await expect(page.locator(".trace-sample")).toHaveCount(6);
+  await page.locator(".trace-sample").first().click();
+  await expect(
+    page
+      .locator(".trace-list .span-row strong")
+      .filter({ hasText: "incident.slow_query.baseline" }),
+  ).toHaveCount(1);
+  await expect(
+    page
+      .locator(".trace-list .span-row strong")
+      .filter({ hasText: "incident.slow_query.affected" }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Show live spans", exact: true })
+    .click();
+  await expect(page.locator(".trace-source")).toHaveText("Live JVM telemetry");
+  await page
+    .getByRole("button", { name: "Show saved evidence", exact: true })
+    .click();
+  await expect(page.locator(".trace-list")).toContainText("db.query");
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
 });
 test("editable diagram, optimistic versions, SVG export and reload from database", async ({
   page,

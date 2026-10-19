@@ -8,6 +8,14 @@ Frontend: TypeScript compilation and Vite production build. Playwright drives th
 
 ## Verification record
 
+### Durable incident evidence — 19 October 2026
+
+All **100 backend cases passed in Java 21 Linux**, with zero failures/errors/skips. Native verification passed 99 cases and skipped the Windows-restricted symlink check. Archive checks cover atomic rollback of investigation/revision/audit when evidence insertion fails, 128-span and 128000-byte limits, database byte enforcement, unrelated-trace exclusion, authentication, invalid/missing IDs, explicit legacy unavailability, document/evidence deletion and persistence after live-ring eviction. Independent sample roots preserve child relationships and request-log correlation. V4-to-V5 migration retains old investigation records without inventing spans.
+
+All **26 browser checks passed** against actual Compose containers: thirteen workflows in each of Chromium and Firefox. The new flow exports the full evidence envelope, reloads/reconnects, reopens the saved investigation, filters an independent baseline trace, switches between saved/live sources and checks a phone-width layout. The first browser run failed an exact wrapping-label selector and experienced one Firefox context closure. The selector was corrected to a semantic combobox locator; four focused checks and then the complete 26-check matrix passed. Those failed attempts are not counted as passing verification, and no automatic retry was added.
+
+The actual API-container/JVM restart check passed: the full saved evidence matched as parsed JSON before/after restart, and the old spans were absent from the new live ring. Existing payment/delivery duplicate suppression, journal durability and repository-memory clearing checks also passed. The isolated five-migration logical restore passed with an evidence fixture and deletion cascade; all 60 small warm read-load requests returned 200, without establishing capacity. The source and both rebuilt runtime-image Trivy High/Critical gates passed; npm audit reported zero findings. The API reference check passed with **37 operations and 162 internal references**. These are local results; check hosted CI against the exact published commit. No live model or source transmission to an AI provider was involved.
+
 ### Phase 4/6/8 follow-up — 19 October 2026
 
 The native backend suite passed all 95 cases with zero failures/errors and one Windows-restricted symlink skip. The Java 21 Linux suite passed all 95 with zero skips. New checks bind approval to the exact question and snapshot even when excerpts are unchanged, restrict local investigation facts/call targets to cited ranges, and exercise a real one-slot Hikari/PostgreSQL pool: three 250 ms acquisition timeouts, successful recovery queries, ERROR acquisition spans and cleanup of probe connections. The application's pool remains separate.

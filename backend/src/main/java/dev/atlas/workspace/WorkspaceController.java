@@ -30,6 +30,13 @@ public class WorkspaceController {
         @PathVariable UUID id,
         @Valid @RequestBody Documents.Write request
     ) {
+        if (
+            request.kind() == Documents.Kind.INCIDENT
+        ) throw new dev.atlas.platform.ApiException(
+            org.springframework.http.HttpStatus.BAD_REQUEST,
+            "SYSTEM_MANAGED_DOCUMENT",
+            "Investigations are created by the incident runner; use a postmortem for your own analysis."
+        );
         return documents.save(id, request);
     }
 

@@ -58,6 +58,9 @@ class EngineeringIntegrationTest {
     Telemetry telemetry;
 
     @Autowired
+    IncidentArchive archive;
+
+    @Autowired
     dev.atlas.eventing.ExperimentService experiments;
 
     @LocalServerPort
@@ -340,6 +343,14 @@ class EngineeringIntegrationTest {
                 d.id().equals(result.id()) &&
                 d.kind() == Documents.Kind.INCIDENT
         );
+        var evidence = archive.get(result.id());
+        assertThat(evidence.available()).isTrue();
+        assertThat(evidence.truncated()).isFalse();
+        assertThat(evidence.investigation()).isEqualTo(result);
+        assertThat(evidence.spans()).isNotEmpty();
+        assertThat(
+            evidence.spans().stream().map(Telemetry.Trace::traceId).distinct()
+        ).hasSize(6);
         if (
             scenario == IncidentService.Scenario.LOCK_CONTENTION ||
             scenario == IncidentService.Scenario.DOWNSTREAM_TIMEOUT
@@ -379,5 +390,226 @@ class EngineeringIntegrationTest {
                 )
             ).isZero();
         }
+    }
+
+    @Test
+    void savedIncidentSpansSurviveLiveEvictionAndDeleteWithTheirDocument()
+        throws Exception {
+        var response = request(
+            "POST",
+            "/observability/incidents",
+            "{\"scenario\":\"SLOW_QUERY\"}"
+        );
+        assertThat(response.statusCode()).isEqualTo(200);
+        var investigation = json.readValue(
+            response.body(),
+            IncidentService.Investigation.class
+        );
+        String path =
+            "/observability/incidents/" + investigation.id() + "/evidence";
+        var first = request("GET", path, "");
+        assertThat(first.statusCode()).isEqualTo(200);
+        var saved = json.readValue(
+            first.body(),
+            IncidentArchive.Evidence.class
+        );
+        assertThat(
+            saved.spans().stream().map(Telemetry.Trace::traceId).distinct()
+        ).hasSize(6);
+        assertThat(saved.spans()).allSatisfy(s ->
+            assertThat(s.correlationId()).isEqualTo(
+                response.headers().firstValue("X-Correlation-ID").orElseThrow()
+            )
+        );
+        for (int i = 0; i < 1100; i++) telemetry.start("evict.fixture").end();
+        assertThat(telemetry.traces()).noneMatch(s ->
+            saved.spans().contains(s)
+        );
+        assertThat(
+            json.readValue(
+                request("GET", path, "").body(),
+                IncidentArchive.Evidence.class
+            )
+        ).isEqualTo(saved);
+        assertThat(
+            request(
+                "DELETE",
+                "/workspace/documents/" + investigation.id(),
+                ""
+            ).statusCode()
+        ).isEqualTo(200);
+        assertThat(
+            jdbc.queryForObject(
+                "SELECT count(*) FROM incident_evidence WHERE incident_id=?",
+                Integer.class,
+                investigation.id()
+            )
+        ).isZero();
+        assertThat(request("GET", path, "").statusCode()).isEqualTo(404);
+    }
+
+    @Test
+    void legacyEvidenceIsExplicitAndArchiveReadsRequireAuthorization()
+        throws Exception {
+        var result = fixtureInvestigation(UUID.randomUUID());
+        documents.save(
+            result.id(),
+            new Documents.Write(
+                Documents.Kind.INCIDENT,
+                "Legacy investigation",
+                json.valueToTree(result),
+                0
+            )
+        );
+        String path = "/observability/incidents/" + result.id() + "/evidence";
+        var legacy = json.readValue(
+            request("GET", path, "").body(),
+            IncidentArchive.Evidence.class
+        );
+        assertThat(legacy.available()).isFalse();
+        assertThat(legacy.spans()).isEmpty();
+        assertThat(legacy.scope()).contains("cannot be reconstructed");
+        assertThat(
+            client
+                .send(
+                    HttpRequest.newBuilder(
+                        URI.create("http://127.0.0.1:" + port + "/api" + path)
+                    )
+                        .GET()
+                        .build(),
+                    HttpResponse.BodyHandlers.ofString()
+                )
+                .statusCode()
+        ).isEqualTo(401);
+        assertThat(
+            request(
+                "GET",
+                "/observability/incidents/" + UUID.randomUUID() + "/evidence",
+                ""
+            ).statusCode()
+        ).isEqualTo(404);
+        assertThat(
+            request(
+                "GET",
+                "/observability/incidents/not-a-uuid/evidence",
+                ""
+            ).statusCode()
+        ).isEqualTo(400);
+        assertThat(
+            request(
+                "PUT",
+                "/workspace/documents/" + result.id(),
+                json.writeValueAsString(
+                    new Documents.Write(
+                        Documents.Kind.INCIDENT,
+                        "Attempted edit",
+                        json.valueToTree(result),
+                        1
+                    )
+                )
+            ).statusCode()
+        ).isEqualTo(400);
+    }
+
+    @Test
+    void archivedSpansRespectCountAndByteBudgetsAndExcludeOtherTraces() {
+        var result = fixtureInvestigation(UUID.randomUUID());
+        var spans = new ArrayList<Telemetry.Trace>();
+        for (int i = 0; i < 140; i++) spans.add(
+            fixtureSpan("a".repeat(32), String.format("%016x", i), "db.query")
+        );
+        spans.add(fixtureSpan("b".repeat(32), "other", "unrelated"));
+        archive.save(result, spans);
+        var evidence = archive.get(result.id());
+        assertThat(evidence.spans())
+            .hasSize(128)
+            .noneMatch(s -> s.name().equals("unrelated"));
+        assertThat(evidence.truncated()).isTrue();
+        var large = fixtureInvestigation(UUID.randomUUID());
+        archive.save(
+            large,
+            List.of(fixtureSpan("a".repeat(32), "oversize", "x".repeat(140000)))
+        );
+        assertThat(archive.get(large.id()).spans()).isEmpty();
+        assertThat(archive.get(large.id()).truncated()).isTrue();
+        assertThat(
+            jdbc.queryForObject(
+                "SELECT max(octet_length(evidence_json)) FROM incident_evidence",
+                Integer.class
+            )
+        ).isLessThanOrEqualTo(128000);
+        assertThatThrownBy(() ->
+            jdbc.update(
+                "UPDATE incident_evidence SET evidence_json=repeat('x',128001) WHERE incident_id=?",
+                result.id()
+            )
+        ).isInstanceOf(
+            org.springframework.dao.DataIntegrityViolationException.class
+        );
+    }
+
+    @Test
+    void evidenceInsertFailureRollsBackInvestigationRevisionsAndAudit() {
+        var result = fixtureInvestigation(UUID.randomUUID());
+        jdbc.execute(
+            "ALTER TABLE incident_evidence ADD CONSTRAINT atlas_test_reject_evidence CHECK (incident_id <> '" +
+                result.id() +
+                "'::uuid) NOT VALID"
+        );
+        try {
+            assertThatThrownBy(() ->
+                archive.save(result, List.of())
+            ).isInstanceOf(
+                org.springframework.dao.DataIntegrityViolationException.class
+            );
+            assertThat(
+                jdbc.queryForObject(
+                    "SELECT count(*) FROM workspace_document WHERE id=?",
+                    Integer.class,
+                    result.id()
+                )
+            ).isZero();
+            assertThat(documents.revisions(result.id())).isEmpty();
+            assertThat(
+                jdbc.queryForObject(
+                    "SELECT count(*) FROM workspace_audit WHERE target=?",
+                    Integer.class,
+                    result.id().toString()
+                )
+            ).isZero();
+        } finally {
+            jdbc.execute(
+                "ALTER TABLE incident_evidence DROP CONSTRAINT atlas_test_reject_evidence"
+            );
+        }
+    }
+
+    private IncidentService.Investigation fixtureInvestigation(UUID id) {
+        return new IncidentService.Investigation(
+            id,
+            IncidentService.Scenario.SLOW_QUERY,
+            List.of(new IncidentService.Sample("a".repeat(32), 1, "OK")),
+            List.of(),
+            "Synthetic fixture",
+            "Not measured",
+            "Test only"
+        );
+    }
+
+    private Telemetry.Trace fixtureSpan(
+        String trace,
+        String span,
+        String name
+    ) {
+        return new Telemetry.Trace(
+            trace,
+            span,
+            "0".repeat(16),
+            name,
+            1,
+            "UNSET",
+            "background",
+            java.time.Instant.now()
+        );
     }
 }

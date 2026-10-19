@@ -95,6 +95,7 @@ class MigrationUpgradeTest {
                     .dataSource(url, "atlas", "atlas-local-only")
                     .schemas(schema)
                     .defaultSchema(schema)
+                    .target("4")
                     .load()
                     .migrate();
                 assertThat(workspace.migrationsExecuted).isEqualTo(2);
@@ -106,6 +107,38 @@ class MigrationUpgradeTest {
                 ) {
                     rows.next();
                     assertThat(rows.getInt(1)).isZero();
+                }
+                UUID legacy = UUID.randomUUID();
+                try (
+                    var insert = connection.prepareStatement(
+                        "INSERT INTO " +
+                            schema +
+                            ".workspace_document(id,kind,title,version,body_json) VALUES(?,'INCIDENT','Legacy investigation',1,'{}')"
+                    )
+                ) {
+                    insert.setObject(1, legacy);
+                    insert.executeUpdate();
+                }
+                var evidenceUpgrade = Flyway.configure()
+                    .dataSource(url, "atlas", "atlas-local-only")
+                    .schemas(schema)
+                    .defaultSchema(schema)
+                    .load()
+                    .migrate();
+                assertThat(evidenceUpgrade.migrationsExecuted).isEqualTo(1);
+                try (
+                    var statement = connection.createStatement();
+                    var rows = statement.executeQuery(
+                        "SELECT (SELECT count(*) FROM " +
+                            schema +
+                            ".workspace_document) documents,(SELECT count(*) FROM " +
+                            schema +
+                            ".incident_evidence) evidence"
+                    )
+                ) {
+                    rows.next();
+                    assertThat(rows.getInt("documents")).isEqualTo(1);
+                    assertThat(rows.getInt("evidence")).isZero();
                 }
             } finally {
                 // Remove only this method's validated, freshly-created schema in the disposable database.

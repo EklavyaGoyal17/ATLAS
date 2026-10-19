@@ -27,8 +27,16 @@ async function api(path, method = "GET", body, key) {
   return data;
 }
 await api("/worker", "PUT", { running: false });
-const recordId=randomUUID();
-await api(`/workspace/documents/${recordId}`,"PUT",{kind:"JOURNAL",title:"Synthetic restart verification",expectedVersion:0,body:{purpose:"Verify durable engineering records",evidence:"Generated local test data"}});
+const recordId = randomUUID();
+await api(`/workspace/documents/${recordId}`, "PUT", {
+  kind: "JOURNAL",
+  title: "Synthetic restart verification",
+  expectedVersion: 0,
+  body: {
+    purpose: "Verify durable engineering records",
+    evidence: "Generated local test data",
+  },
+});
 const scenario = await api(
   "/experiments",
   "POST",
@@ -44,6 +52,13 @@ assert.equal(first.outcome, "CRASH_AFTER_COMMIT");
 const before = await api(`/events/${id}`);
 assert.equal(before.event.effects, 1);
 assert.equal(before.event.status, "PROCESSING");
+const investigation = await api("/observability/incidents", "POST", {
+  scenario: "SLOW_QUERY",
+});
+const evidencePath = `/observability/incidents/${investigation.id}/evidence`;
+const evidenceBefore = await api(evidencePath);
+assert.equal(evidenceBefore.available, true);
+assert.ok(evidenceBefore.spans.some((span) => span.name === "db.query"));
 console.log(
   `Committed one effect for ${id}; restarting only the ATLAS Compose API.`,
 );
@@ -66,9 +81,28 @@ for (let poll = 0; poll < 120; poll++) {
   await delay(250);
 }
 assert.ok(ready, "API did not become healthy after restart");
-const records=await api("/workspace/documents?kind=JOURNAL");
-assert.equal(records.find(record=>record.id===recordId)?.body.evidence,"Generated local test data");
-assert.equal((await api("/repository/configuration")).indexed,false,"Repository source must not automatically reappear after restart");
+const records = await api("/workspace/documents?kind=JOURNAL");
+assert.equal(
+  records.find((record) => record.id === recordId)?.body.evidence,
+  "Generated local test data",
+);
+assert.equal(
+  (await api("/repository/configuration")).indexed,
+  false,
+  "Repository source must not automatically reappear after restart",
+);
+assert.equal(
+  (await api("/observability/traces")).some((span) =>
+    evidenceBefore.spans.some((saved) => saved.spanId === span.spanId),
+  ),
+  false,
+  "Saved sample spans must not reappear in the new JVM's live ring",
+);
+assert.deepEqual(
+  await api(evidencePath),
+  evidenceBefore,
+  "Saved investigation spans changed across restart",
+);
 const persisted = await api(`/events/${id}`);
 assert.equal(persisted.event.effects, 1);
 assert.equal(persisted.event.status, "PROCESSING");
@@ -92,8 +126,9 @@ console.log(
       effects: after.event.effects,
       duplicatesSuppressed: after.event.duplicatesSuppressed,
       paymentState: payment.payment.status,
-      engineeringRecordPersisted:true,
-      repositorySnapshotCleared:true,
+      engineeringRecordPersisted: true,
+      repositorySnapshotCleared: true,
+      incidentEvidencePersisted: true,
       note: "Actual API container/JVM restart; injected interruption at commit-before-ack, not an OS power-loss test.",
     },
     null,

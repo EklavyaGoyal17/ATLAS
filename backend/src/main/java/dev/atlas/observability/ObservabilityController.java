@@ -13,13 +13,16 @@ public class ObservabilityController {
 
     private final Telemetry telemetry;
     private final IncidentService incidents;
+    private final IncidentArchive archive;
 
     public ObservabilityController(
         Telemetry telemetry,
-        IncidentService incidents
+        IncidentService incidents,
+        IncidentArchive archive
     ) {
         this.telemetry = telemetry;
         this.incidents = incidents;
+        this.archive = archive;
     }
 
     @GetMapping("/metrics")
@@ -37,5 +40,10 @@ public class ObservabilityController {
         @Valid @RequestBody Inject request
     ) {
         return incidents.run(request.scenario());
+    }
+
+    @GetMapping("/incidents/{id}/evidence")
+    public IncidentArchive.Evidence evidence(@PathVariable UUID id) {
+        return archive.get(id);
     }
 }

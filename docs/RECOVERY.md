@@ -4,7 +4,7 @@ ATLAS now has two distinct automated recovery checks. They establish different f
 
 ## Application restart
 
-With Compose running and `ATLAS_API_TOKEN` set, run `node scripts/recovery-check.mjs`. The script pauses the local worker, creates a synthetic event and engineering note, commits the event's consumer effect without acknowledging delivery, and restarts this project's API container. It verifies one durable effect, inbox duplicate suppression, unchanged payment state, a persisted engineering note and an empty in-memory repository index after restart. It deletes no application records. This is an API/JVM restart, not a database crash or machine power-loss test.
+With Compose running and `ATLAS_API_TOKEN` set, run `node scripts/recovery-check.mjs`. The script pauses the local worker, creates a synthetic event, engineering note and measured investigation, commits the event's consumer effect without acknowledging delivery, and restarts this project's API container. It verifies one durable effect, inbox duplicate suppression, unchanged payment state, the engineering note, an empty in-memory repository index and identical archived investigation spans after restart. Those saved spans must be absent from the fresh JVM's live ring. It deletes no application records. This is an API/JVM restart, not a database crash or machine power-loss test.
 
 ## Isolated logical backup and restore
 
@@ -14,11 +14,11 @@ Run:
 node scripts/restore-drill.mjs
 ```
 
-Requires Docker and the same PostgreSQL 17.11 image as Compose. The drill creates a uniquely named, labelled PostgreSQL container with no network, no published ports, and a tmpfs data directory. It never connects to `atlas`, `atlas_test`, either existing database container, or their volumes. It applies the repository's four migrations directly to a new fixture database, then inserts only generated synthetic records.
+Requires Docker and the same PostgreSQL 17.11 image as Compose. The drill creates a uniquely named, labelled PostgreSQL container with no network, no published ports, and a tmpfs data directory. It never connects to `atlas`, `atlas_test`, either existing database container, or their volumes. It applies all five migrations directly to a new fixture database, then inserts only generated synthetic records, including archived incident evidence.
 
 The fixture includes a captured payment and paired posting, an immutable response record, an outbox event still leased after its consumer effect, inbox/notification/webhook receipts, an engineering journal with two revisions and the saved worker clock. The script creates a custom-format `pg_dump`, restores it into another fresh database with `pg_restore --single-transaction --exit-on-error`, and compares the complete selected source/restored rows and ledger totals.
 
-It additionally verifies that the restored unique capture constraint still rejects a duplicate, the identity sequence advances correctly, and deleting a restored journal record cascades to its revisions. Before cleanup, the script checks both the exact container-name pattern and its per-run ownership labels. It removes only that newly created container. The dump is inside the disposable container and does not become a public artifact.
+It additionally verifies that the restored unique capture constraint still rejects a duplicate, the identity sequence advances correctly, and deleting restored journal/investigation records cascades to their revisions/evidence. Before cleanup, the script checks both the exact container-name pattern and its per-run ownership labels. It removes only that newly created container. The dump is inside the disposable container and does not become a public artifact.
 
 Executed local result on 19 October 2026: PASS for all checks, repeated after switching readiness to the final server's TCP listener instead of the entrypoint's temporary initialization socket. This drill is included in the Windows verification entry point and GitHub workflow. The [hosted verification job for the restore implementation](https://github.com/EklavyaGoyal17/ATLAS/actions/runs/39225309593/job/117970032149) also passed.
 

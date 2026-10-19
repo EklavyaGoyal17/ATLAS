@@ -53,6 +53,7 @@ const payment = randomUUID(),
   event = randomUUID(),
   posting = randomUUID();
 const document = randomUUID(),
+  incident = randomUUID(),
   correlation = randomUUID(),
   lease = randomUUID();
 const envelope = JSON.stringify({
@@ -80,6 +81,7 @@ const snapshot = `SELECT json_build_object(
  'notification',(SELECT row_to_json(n) FROM notification n WHERE event_id='${event}'),
  'webhook',(SELECT row_to_json(w) FROM webhook_receipt w WHERE event_id='${event}'),
  'document',(SELECT row_to_json(d) FROM workspace_document d WHERE id='${document}'),
+ 'incidentEvidence',(SELECT row_to_json(e) FROM incident_evidence e WHERE incident_id='${incident}'),
  'revisions',(SELECT json_agg(r ORDER BY version) FROM document_revision r WHERE document_id='${document}'),
  'worker',(SELECT row_to_json(w) FROM worker_control w WHERE id=1),
  'debits',(SELECT sum(debit_minor) FROM ledger_entry WHERE currency='USD'),
@@ -157,6 +159,8 @@ try {
     INSERT INTO webhook_receipt(event_id,payload_sha256) VALUES('${event}',repeat('b',64));
     INSERT INTO workspace_document(id,kind,title,version,body_json) VALUES('${document}','JOURNAL','Synthetic restore record',2,'${documentBody}');
     INSERT INTO document_revision(document_id,version,title,body_json) VALUES('${document}',1,'Synthetic first revision','{}'),('${document}',2,'Synthetic restore record','${documentBody}');
+    INSERT INTO workspace_document(id,kind,title,version,body_json) VALUES('${incident}','INCIDENT','Synthetic incident archive',1,'{}');
+    INSERT INTO incident_evidence(incident_id,evidence_json) VALUES('${incident}','{"id":"${incident}","available":true,"spans":[{"name":"db.query","durationMs":80}],"scope":"Synthetic restore fixture"}');
     UPDATE worker_control SET current_tick=7,running=false WHERE id=1;
     COMMIT;`,
   );
@@ -196,6 +200,10 @@ try {
   assert.equal(after.inbox.event_id, event);
   assert.equal(after.document.version, 2);
   assert.equal(after.revisions.length, 2);
+  assert.equal(
+    JSON.parse(after.incidentEvidence.evidence_json).spans[0].name,
+    "db.query",
+  );
   let rejected = false;
   try {
     sql(
@@ -227,6 +235,14 @@ try {
     "0",
     "Restored revision deletion must cascade",
   );
+  assert.equal(
+    sql(
+      restored,
+      `DELETE FROM workspace_document WHERE id='${incident}'; SELECT count(*) FROM incident_evidence WHERE incident_id='${incident}';`,
+    ),
+    "0",
+    "Restored incident evidence deletion must cascade",
+  );
   console.log(
     JSON.stringify(
       {
@@ -239,6 +255,7 @@ try {
           "outbox lease and inbox effect",
           "webhook receipt",
           "journal and revisions",
+          "saved incident evidence and deletion cascade",
           "worker clock",
           "unique constraints",
           "identity sequence",

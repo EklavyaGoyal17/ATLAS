@@ -1,7 +1,6 @@
 package dev.atlas.observability;
 
 import dev.atlas.platform.ApiException;
-import dev.atlas.workspace.Documents;
 import java.sql.*;
 import java.util.*;
 import java.util.concurrent.*;
@@ -9,7 +8,6 @@ import javax.sql.DataSource;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
-import tools.jackson.databind.json.JsonMapper;
 
 @Service
 public class IncidentService {
@@ -40,22 +38,19 @@ public class IncidentService {
     private final JdbcTemplate jdbc;
     private final DataSource source;
     private final Telemetry telemetry;
-    private final Documents documents;
-    private final JsonMapper json;
+    private final IncidentArchive archive;
     private final Semaphore gate = new Semaphore(1);
 
     public IncidentService(
         JdbcTemplate jdbc,
         DataSource source,
         Telemetry telemetry,
-        Documents documents,
-        JsonMapper json
+        IncidentArchive archive
     ) {
         this.jdbc = jdbc;
         this.source = source;
         this.telemetry = telemetry;
-        this.documents = documents;
-        this.json = json;
+        this.archive = archive;
     }
 
     public Investigation run(Scenario scenario) {
@@ -71,12 +66,17 @@ public class IncidentService {
         ) {
             var baseline = new ArrayList<Sample>();
             var affected = new ArrayList<Sample>();
-            for (int i = 0; i < 3; i++) baseline.add(
-                sample(scenario, false, probe)
-            );
-            for (int i = 0; i < 3; i++) affected.add(
-                sample(scenario, true, probe)
-            );
+            var captured = new ArrayList<Telemetry.Trace>();
+            for (int i = 0; i < 3; i++) {
+                var measured = sample(scenario, false, probe);
+                baseline.add(measured);
+                capture(measured, captured);
+            }
+            for (int i = 0; i < 3; i++) {
+                var measured = sample(scenario, true, probe);
+                affected.add(measured);
+                capture(measured, captured);
+            }
             String cause = switch (scenario) {
                 case SLOW_QUERY -> "The controlled PostgreSQL query waits 80 ms using pg_sleep.";
                 case LOCK_CONTENTION -> "A second PostgreSQL transaction waits on a held advisory lock until its 100 ms statement deadline.";
@@ -96,15 +96,7 @@ public class IncidentService {
                 "Compare the three baseline samples with the three affected samples; inspect child spans and their ERROR statuses. Re-run without injection to validate recovery.",
                 "Controlled synthetic workload, measured wall-clock durations; isolated from payment state. Local dependency delays are simulated; db.query spans execute PostgreSQL. Not production telemetry."
             );
-            documents.save(
-                result.id(),
-                new Documents.Write(
-                    Documents.Kind.INCIDENT,
-                    "Investigation: " + scenario,
-                    json.valueToTree(result),
-                    0
-                )
-            );
+            archive.save(result, captured);
             return result;
         } catch (SQLException ex) {
             throw new ApiException(
@@ -122,7 +114,7 @@ public class IncidentService {
         boolean fault,
         ConnectionPoolProbe probe
     ) {
-        var root = telemetry.start(
+        var root = telemetry.startRoot(
             "incident." +
                 scenario.name().toLowerCase() +
                 (fault ? ".affected" : ".baseline")
@@ -186,6 +178,14 @@ public class IncidentService {
             (System.nanoTime() - start) / 1e6,
             outcome
         );
+    }
+
+    private void capture(Sample measured, List<Telemetry.Trace> captured) {
+        telemetry
+            .traces()
+            .stream()
+            .filter(s -> s.traceId().equals(measured.traceId()))
+            .forEach(captured::add);
     }
 
     private void contention() throws SQLException {

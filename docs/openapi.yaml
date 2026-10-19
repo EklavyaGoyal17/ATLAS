@@ -542,7 +542,7 @@ paths:
   /api/workspace/documents/{id}:
     put:
       operationId: saveEngineeringDocument
-      description: Authenticated local engineering workspace operation
+      description: Create or update an engineer-authored record. INCIDENT is system-managed and returns 400 here; create investigations through the incident runner and record your own analysis in a POSTMORTEM.
       responses:
         '200':
           description: Successful operation
@@ -964,6 +964,30 @@ paths:
                   - MISCONFIGURED_TIMEOUT
               required:
               - scenario
+  /api/observability/incidents/{id}/evidence:
+    get:
+      operationId: savedIncidentEvidence
+      description: Immutable bounded sample spans and investigation snapshot. Older investigations return available=false without reconstructing expired spans. Deleting the workspace investigation cascades to its evidence.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Saved evidence or explicit legacy unavailability
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IncidentEvidence'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Investigation not found
   /api/simulations:
     post:
       operationId: discreteEventExperiment
@@ -1517,6 +1541,28 @@ components:
       - hypothesis
       - validation
       - scope
+    IncidentEvidence:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        available:
+          type: boolean
+        investigation:
+          anyOf:
+          - $ref: '#/components/schemas/Investigation'
+          - type: 'null'
+        spans:
+          type: array
+          maxItems: 128
+          items:
+            $ref: '#/components/schemas/TraceSpan'
+        truncated:
+          type: boolean
+        scope:
+          type: string
+      required: [id, available, investigation, spans, truncated, scope]
     SimulationResult:
       type: object
       properties:

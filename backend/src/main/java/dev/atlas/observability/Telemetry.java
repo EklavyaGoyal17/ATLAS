@@ -52,6 +52,19 @@ public class Telemetry implements SpanExporter {
             );
     }
 
+    public Span startRoot(String name) {
+        return tracer
+            .spanBuilder(name)
+            .setNoParent()
+            .startSpan()
+            .setAttribute(
+                "atlas.correlation_id",
+                Optional.ofNullable(org.slf4j.MDC.get("correlationId")).orElse(
+                    "background"
+                )
+            );
+    }
+
     public Span incoming(
         String name,
         jakarta.servlet.http.HttpServletRequest request

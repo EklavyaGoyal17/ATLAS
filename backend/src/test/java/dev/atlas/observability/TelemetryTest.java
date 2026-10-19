@@ -8,6 +8,33 @@ import org.junit.jupiter.api.Test;
 class TelemetryTest {
 
     @Test
+    void independentSampleRootsKeepChildrenTogetherWithoutInheritingCallerTrace() {
+        var telemetry = new Telemetry();
+        try {
+            var caller = telemetry.start("caller");
+            try (var parent = caller.makeCurrent()) {
+                var sample = telemetry.startRoot("incident.sample");
+                try (var scope = sample.makeCurrent()) {
+                    var child = telemetry.start("db.query");
+                    assertThat(child.getSpanContext().getTraceId()).isEqualTo(
+                        sample.getSpanContext().getTraceId()
+                    );
+                    child.end();
+                } finally {
+                    sample.end();
+                }
+                assertThat(sample.getSpanContext().getTraceId()).isNotEqualTo(
+                    caller.getSpanContext().getTraceId()
+                );
+            } finally {
+                caller.end();
+            }
+        } finally {
+            telemetry.destroyProvider();
+        }
+    }
+
+    @Test
     void boundedSpanAndLatencyRetentionDoesNotLoseLifetimeCounters() {
         var telemetry = new Telemetry();
         try {
