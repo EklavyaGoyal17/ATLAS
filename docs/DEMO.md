@@ -47,7 +47,7 @@ Verification: every incident recipe runs in EngineeringIntegrationTest; the real
 
 ## Demo 4 — Understand the ATLAS codebase
 
-Open Code intelligence, approve relative path `.` and import the read-only checkout. Search `authorize`. Open the endpoint symbol in PaymentController, then follow the source-supported potential call to PaymentService.authorize and its Transactional boundary. Inspect PaymentStore declarations and the type graph, then cross-check actual HTTP/JDBC trace evidence. Review manifest dependencies and maintainability findings. Git history is empty in this uncommitted checkout; real commits/diffs appear when the approved repository has them. Try `../outside` and verify rejection. No source builds or scripts execute.
+Open Code intelligence, approve relative path `.` and import the read-only checkout. Search `authorize`. Open the endpoint symbol in PaymentController, then follow the source-supported potential call to PaymentService.authorize and its Transactional boundary. Inspect PaymentStore declarations and the type graph, then cross-check actual HTTP/JDBC trace evidence. Review manifest dependencies and maintainability findings. The published checkout now has real commits; select a file to inspect its bounded history and any tracked working-tree diff. Try `../outside` and verify rejection. No source builds or scripts execute.
 
 Verification: parser, path/approval, link, bounds, secret, prompt-injection and XML entity tests; repository browser workflow. Supported call links are hypotheses from syntax and arity, not dynamic call-graph guarantees.
 

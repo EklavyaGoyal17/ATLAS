@@ -8,11 +8,21 @@ Frontend: TypeScript compilation and Vite production build. Playwright drives th
 
 ## Verification record
 
+### Publication and transport/recovery hardening — 19 October 2026
+
+The implementation was committed and pushed to `EklavyaGoyal17/ATLAS`. The [corrected hosted workflow](https://github.com/EklavyaGoyal17/ATLAS/actions/runs/39224956418) passed both jobs: Java 21/backend verification, ten real-Compose browser workflows, npm audit, API restart, Git evidence, both runtime-image scans and the separate source vulnerability scan. Its backend snapshot had 88 test cases. The first published run had passed its verification job but failed source dependency discovery with Maven Central HTTP 429; this was an infrastructure failure, not a passing vulnerability result. Resolving with Maven's restored cache and using offline dependency identification fixed the source gate without disabling vulnerability database updates or severity failures.
+
+The [subsequent hosted verification job](https://github.com/EklavyaGoyal17/ATLAS/actions/runs/39225309593/job/117970032149) also passed the newly added isolated logical restore drill. The TCP readiness check now waits for PostgreSQL's final listener rather than racing the entrypoint's temporary initialization server. The strengthened drill passed locally again; it never accessed existing application/test databases or their volumes.
+
+Four additional real HTTP provider cases now check a 503 outage, a 302 redirect that must not be followed, rejection of a response above 16 KiB, and a server that sends headers/partial JSON then stalls. All six `HttpModelProviderTest` cases passed. The expanded **92-case full backend suite passed inside Java 21 Linux with zero failures, errors or skips**. The stalled-body case exercised the actual four-second body deadline with a loopback fixture; no real model, API key or repository transmission to an AI provider was involved.
+
+These new tests are in addition to the unchanged ten browser workflows and existing concurrency/migration/security cases. The README badge and repository Actions page show results for newer commits; the fixed run links above identify the exact observed hosted checkpoints. Earlier sections below preserve their original local test counts and unavailable-check statements as historical records.
+
 ### Continuation — isolated logical backup and restore
 
 `node scripts/restore-drill.mjs` passed locally on 19 October 2026 against PostgreSQL 17.11. Four migrations and generated payment/ledger, replay, leased outbox, consumer/webhook receipt, worker-clock and journal/revision fixtures were dumped and restored in a new network-isolated tmpfs container. Restored rows matched; ledger totals balanced; unique capture rejection, identity-sequence advancement and revision deletion cascades passed. Cleanup verified the container's per-run labels. No existing application/test database or volume was accessed. This additional drill is separate from the 88 backend test cases and does not validate actual application backups or production disaster recovery. See RECOVERY.
 
-### Current full workspace verification — 19 October 2026
+### Pre-publication full workspace verification — 19 October 2026
 
 Executed against Docker Engine 29.5.3, PostgreSQL 17.11, the real nginx console, Node 24.13.1, native Java 25.0.3 and the separate Temurin Java 21 Linux test runner. The complete verification entry point passed. Focused checks were repeated after the final Git trust-boundary and frontend refinements. No hosted CI result or live model result is implied.
 

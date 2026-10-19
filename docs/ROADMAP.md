@@ -16,7 +16,7 @@ All seven module areas have implementations in the local single-user platform. T
 
 ## External acceptance and deliberate limits
 
-- GitHub Actions has not run on GitHub: this checkout has no configured remote. A hosted run requires the user's repository destination/account.
+- The repository is published at `EklavyaGoyal17/ATLAS`. Hosted verification and source/runtime-image vulnerability gates passed after fixing a Maven Central dependency-discovery rate limit. TESTING links the observed runs; the README badge shows the current branch result.
 - No live model is installed and no API credentials were supplied. Synthetic local stubs verify the bridge contract and failure behavior. Provider answer quality and data handling require separate evaluation and explicit transmission approval.
 - This installation has one loopback-bound engineer identity. A shared deployment requires scoped user identities, TLS, separated migration/runtime database roles, rotation and independent security review. Those protections are not claimed here.
 - Connection-budget saturation, dependency delays, logical compensation/cache/breaker/SLO models are labeled synthetic. They do not prove real pool exhaustion, broker failover, global quotas, multi-region consistency or production capacity.

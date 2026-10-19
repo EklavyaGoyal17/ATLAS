@@ -20,7 +20,7 @@ The fixture includes a captured payment and paired posting, an immutable respons
 
 It additionally verifies that the restored unique capture constraint still rejects a duplicate, the identity sequence advances correctly, and deleting a restored journal record cascades to its revisions. Before cleanup, the script checks both the exact container-name pattern and its per-run ownership labels. It removes only that newly created container. The dump is inside the disposable container and does not become a public artifact.
 
-Executed local result on 19 October 2026: PASS for all checks. This drill is included in the Windows verification entry point and GitHub workflow. The hosted outcome must be observed separately.
+Executed local result on 19 October 2026: PASS for all checks, repeated after switching readiness to the final server's TCP listener instead of the entrypoint's temporary initialization socket. This drill is included in the Windows verification entry point and GitHub workflow. The [hosted verification job for the restore implementation](https://github.com/EklavyaGoyal17/ATLAS/actions/runs/39225309593/job/117970032149) also passed.
 
 This verifies a logical schema/data round trip of generated fixtures. Migrations are tested by Flyway separately; the drill does not claim a restored Flyway history or validate actual application data. It does not measure production recovery-point/recovery-time objectives, physical crash recovery, encrypted backup storage, retention or off-machine disaster recovery.
 

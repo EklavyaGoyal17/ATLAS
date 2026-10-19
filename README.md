@@ -1,5 +1,7 @@
 # ATLAS
 
+[![Verify ATLAS](https://github.com/EklavyaGoyal17/ATLAS/actions/workflows/ci.yml/badge.svg)](https://github.com/EklavyaGoyal17/ATLAS/actions/workflows/ci.yml)
+
 **Adaptive Technical Learning, Analysis & Systems**
 Understand systems. Build confidently. Investigate intelligently. Engineer reliably.
 
@@ -52,7 +54,7 @@ Create an authorization for `12500` USD minor units ($125.00), inspect its timel
 
 The console now connects all seven module areas: correct synthetic payment workflows; a durable outbox worker and twelve deterministic systems models; measured OpenTelemetry traces and eight controlled incident recipes; approved read-only repository import with Java AST navigation, declared dependency maps and source-supported potential calls; a cited local-evidence assistant with an opt-in provider interface; editable versioned architecture diagrams; and persistent engineering journals, ADRs, learning evidence and rubric reviews. Signed loopback webhooks demonstrate duplicate HTTP deliveries. No external webhook destinations or financial networks are contacted.
 
-Verification evidence and exact test counts are recorded in [TESTING](docs/TESTING.md). The full checks include backend invariants/security/integration tests, browser workflows against actual containers, frontend builds, dependency audits, runtime-image scans and API restart recovery. GitHub Actions is configured but has not executed on GitHub; this checkout has no remote. No live AI model or external source transmission has been used. [AI and import](docs/AI_AND_IMPORT.md) explains privacy, consent, supported analysis and optional bridge configuration.
+Verification evidence and exact test counts are recorded in [TESTING](docs/TESTING.md). The checks include **92 backend cases on Java 21**, ten real-container browser workflows, frontend builds, dependency audits, runtime-image scans, API restart recovery and an isolated logical restore drill. The repository is published and its hosted verification/source-vulnerability jobs have passed; the badge links to the current branch result. No live AI model has been used and no repository content has been sent to an AI provider. [AI and import](docs/AI_AND_IMPORT.md) explains privacy, consent, supported analysis and optional bridge configuration.
 
 Implemented source boundaries: `payments` (workflow/ledger), `eventing` (durable delivery, signed local webhooks and isolated models), `observability` (OTel and investigations), `intelligence` (safe import, AST, retrieval and optional explanations), `workspace` (versioned records), `platform` (authentication, rate budgets and errors), and `frontend/src` (console). SQL and transaction boundaries are explicit. Nine ADRs explain the JDBC, SVG-editor, local telemetry and privacy decisions.
 

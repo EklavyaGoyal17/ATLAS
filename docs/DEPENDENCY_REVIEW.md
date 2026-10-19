@@ -15,7 +15,7 @@ The overrides preserve the existing Tomcat 11 and Jackson 3.1 release lines. See
 
 Known initial IDs: Tomcat CVE-2026-65182, CVE-2026-65905, CVE-2026-68525; Jackson CVE-2026-89407, CVE-2026-89425, CVE-2026-68497, CVE-2026-91776, CVE-2026-91777; libexpat CVE-2026-77214.
 
-The patched source graph and both final runtime-image scans reported zero High/Critical findings. Regression results are recorded in TESTING. This is a point-in-time check of the scanner's current database and selected severities, not proof that all dependencies or deployment settings are secure. npm audit separately covers the frontend lockfile. CI pins the scanner action commit and scanner version; GitHub execution has not been observed here.
+The patched source graph and both final runtime-image scans reported zero High/Critical findings. Regression results are recorded in TESTING. This is a point-in-time check of the scanner's current database and selected severities, not proof that all dependencies or deployment settings are secure. npm audit separately covers the frontend lockfile. CI pins the scanner action commit and scanner version; hosted execution has now been observed and passed after the source-cache correction described below.
 
 ## Full workspace continuation
 
@@ -27,4 +27,4 @@ The scanner checks resolved packages in app runtime images. The infrastructure P
 
 The initial GitHub source-scan job failed during dependency discovery with Maven Central HTTP 429; it did not report a vulnerability result. The source job now follows verification, restores its Maven cache and resolves the source graph with Maven before scanning with `TRIVY_OFFLINE_SCAN=true`. This disables remote dependency-identification lookups, while vulnerability database updates and the High/Critical failure gate remain enabled. Missing cache entries can limit source identification; the separate runtime-image gates inspect the actually packaged applications. Both jobs pin Ubuntu 24.04 to avoid an unrequested runner-OS migration.
 
-This follows Trivy's [Java coverage](https://www.trivy.dev/docs/latest/guide/coverage/language/java/) and [Maven troubleshooting guidance](https://www.trivy.dev/docs/latest/guide/references/troubleshooting/). A passing rerun must be observed before claiming hosted acceptance.
+This follows Trivy's [Java coverage](https://www.trivy.dev/docs/latest/guide/coverage/language/java/) and [Maven troubleshooting guidance](https://www.trivy.dev/docs/latest/guide/references/troubleshooting/). The [corrected hosted run](https://github.com/EklavyaGoyal17/ATLAS/actions/runs/39224956418) passed both verification and source vulnerability jobs. The source-cache change retained all selected-severity failure gates.
