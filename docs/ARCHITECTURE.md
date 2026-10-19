@@ -1,0 +1,56 @@
+# Architecture and discovery
+
+The initial workspace was empty: there was no existing code to retain. The host provides Maven 3.9.16, Java 25, Node 24, and Docker Desktop. Source targets Java 21. Dependencies are pinned; Spring Boot 4.1.1 supports this toolchain. This is a local single-user application, not a shared financial service.
+
+## Initial journeys
+
+1. Launch, authenticate with the configured local token, create a synthetic authorization.
+2. Repeat the exact request and observe the original payment and a replay indicator.
+3. Capture once, refund partially, inspect immutable timeline and balanced postings.
+4. Attempt an invalid transition; receive a conflict with no partial business effects.
+5. Restart the API and inspect the same persisted payment.
+
+```mermaid
+flowchart LR
+  Engineer --> Console[React console / Vite or nginx]
+  Console -->|same-origin /api · Bearer| Security[Spring Security / correlation]
+  Security --> Controller[Typed payment API]
+  Controller --> Service[Transactional workflow]
+  Service --> Keys[Idempotency · advisory lock]
+  Service --> Store[JDBC · row lock]
+  Keys --> PG[(PostgreSQL)]
+  Store --> PG
+  PG --- Tables[Payment + audit + paired ledger + response]
+```
+
+## Trust and transaction boundaries
+
+Only configured bearer tokens can reach `/api`. There are no cookies or CORS grants. Health returns minimal public readiness. The console never persists its token. All user strings render as React text. Approved repository reads use bounded allowlisted paths; Git inspection uses fixed read-only builtins without a shell. Optional model adapters have no mutation or execution tools and require per-request source-transmission approval. The separate developer recovery-check script deliberately invokes Docker to restart this project's API.
+
+The controller validates trust-boundary inputs. `PaymentService` owns one database transaction per command; `PaymentStore` maps SQL rows to immutable records. JDBC is chosen over JPA to expose PostgreSQL locking and SQL clearly in this teaching slice. Domain status checks precede writes. Migration constraints defend amount ranges and row invariants. Paired postings make an unbalanced single-sided journal entry unrepresentable through the application.
+
+Commands lock the idempotency key first, then the payment row, in consistent order. Equal merchant/key requests serialize across app processes using a transaction-scoped advisory lock. A stored fingerprint detects changed payloads; the original response is retained permanently in this version. A conflicting key returns 409. Failures roll back all effects and do not reserve the key. HTTP response loss after commit can be recovered by retrying the original key. Captures with different keys serialize on `SELECT FOR UPDATE`; only the first observes AUTHORIZED. Refunds with different keys cannot collectively exceed captured funds.
+
+Read workflows use a repeatable-read transaction so payment, audit, and ledger describe one database snapshot. History is bounded offset pagination with a deterministic secondary sort. Large histories should migrate to cursor pagination. Connection pool: 10, connection acquisition timeout: 5 seconds. PostgreSQL startup options bound statements to 10 seconds and lock waits to 5 seconds. The authenticated JSON reader caps fixed-length and chunked request bodies at 16 KiB.
+
+## Domain model
+
+`merchant_demo` is the sole supported merchant. Payment states: AUTHORIZED, DECLINED, CAPTURED, REFUNDED, REVERSED. CAPTURED includes partial refunds, tracked separately. Full capture only. Reversal only releases an uncaptured authorization. No authorization expiry, settlement, fees, FX, network routing, or actual funds movement.
+
+Capture debits acquirer receivable and credits merchant payable. Refund reverses those accounts. USD/EUR/INR are reconciled separately; cross-currency totals are never added together. Reconciliation checks both debit-credit balance and payment-to-posting amounts/currency, because balanced books can still contain missing or wrong business records. It detects inconsistency but never silently repairs it.
+
+## Deliberate boundaries
+
+No microservices, external broker, Redis, vector database or Kubernetes is needed for the local experiments. OpenTelemetry SDK records real HTTP/JDBC timings in a bounded local exporter, including W3C context across signed loopback webhook calls. Structured logs expose the same correlation IDs. Controlled dependency delays and logical model events are explicitly synthetic. The optional provider interface defaults to local source retrieval and performs no model call without configuration and per-request approval.
+
+The frontend uses native HTML dialogs and controls, a small CSS token system, and Lucide icons rather than a UI component framework/Tailwind. Dialogs provide browser focus confinement and Escape handling. The bounded native SVG editor supports pointer/keyboard movement and export; source maps show parser evidence. It replaces React Flow for the deliberately small graph. Incident distributions use measured sample cards and span-duration bars. Integration tests use explicitly provisioned PostgreSQL rather than Testcontainers so the same suite runs against the Windows fallback, a CI service container and the Java 21 Docker test runner.
+
+Dependency baseline was checked against [Spring Boot's runtime requirements](https://docs.spring.io/spring-boot/system-requirements.html), [Vite's guide](https://vite.dev/guide/), and the registry at implementation time. Versions are pinned in pom.xml/package-lock.json. This does not replace continued vulnerability checks.
+
+## Asynchronous delivery boundary
+
+`eventing.OutboxPublisher` requires an existing transaction. Payment events now persist immutable, versioned envelopes with their audit IDs in the same transaction as the original command. `DeliveryService` uses explicit independent transaction templates for claim, consumer commit and acknowledgement; this makes the interruption windows visible. A scheduler processes one event per poll when enabled in the persisted worker control. The inbox and local notification archive are an idempotent consumer boundary. They never modify payment or ledger state.
+
+The default worker is paused. Logical ticks drive deterministic retry and lease expiry. The same code executes manual steps and background polls. `ExperimentService` prepares a new authorization and fault atomically under a paused control lock, with request-key replay. All controls require the existing local engineer bearer token. [ADR 006](DECISIONS/006-durable-delivery-and-logical-clock.md) and [DELIVERY](DELIVERY.md) explain ordering, fencing, restart behavior and limits.
+
+Compose is now verified locally. Database host port defaults to configurable 5434 because 5432 was unavailable on this Windows host. Container-to-container PostgreSQL remains on 5432. The API health check gates console startup. nginx re-resolves the API service address so container replacement does not permanently cache its old IP. The Docker path runs Java 21; the native host runs Java 25 targeting Java 21 bytecode.

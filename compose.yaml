@@ -1,0 +1,60 @@
+name: atlas
+services:
+  db:
+    image: postgres:17.11-alpine
+    environment:
+      POSTGRES_DB: atlas
+      POSTGRES_USER: atlas
+      POSTGRES_PASSWORD: ${ATLAS_DB_PASSWORD:-atlas-local-only}
+    ports: ["127.0.0.1:${ATLAS_DB_PORT:-5434}:5432"]
+    volumes: ["atlas-db:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atlas -d atlas"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  api:
+    build: ./backend
+    environment:
+      ATLAS_API_TOKEN: ${ATLAS_API_TOKEN:?Copy .env.example to .env first}
+      ATLAS_DB_URL: jdbc:postgresql://db:5432/atlas
+      ATLAS_DB_PASSWORD: ${ATLAS_DB_PASSWORD:-atlas-local-only}
+      ATLAS_BIND_ADDRESS: 0.0.0.0
+      ATLAS_REPOSITORY_ROOT: /workspace
+      ATLAS_MODEL_ENDPOINT: ${ATLAS_MODEL_ENDPOINT:-}
+      ATLAS_MODEL_KEY: ${ATLAS_MODEL_KEY:-}
+    volumes:
+      - type: bind
+        source: .
+        target: /workspace
+        read_only: true
+    ports: ["127.0.0.1:8080:8080"]
+    depends_on:
+      db: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/actuator/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+  console:
+    build: ./frontend
+    ports: ["127.0.0.1:5173:80"]
+    depends_on:
+      api: {condition: service_healthy}
+  test-db:
+    image: postgres:17.11-alpine
+    profiles: [test]
+    environment:
+      POSTGRES_DB: atlas_test
+      POSTGRES_USER: atlas
+      POSTGRES_PASSWORD: atlas-local-only
+    ports: ["127.0.0.1:5433:5432"]
+    tmpfs: ["/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atlas -d atlas_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+volumes:
+  atlas-db:

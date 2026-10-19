@@ -1,0 +1,1696 @@
+openapi: 3.1.0
+info:
+  title: ATLAS Engineering Workspace API
+  version: 0.2.0
+  description: Local educational simulation. Integer minor units, no real payment
+    credentials. Keys are merchant-scoped across all command types and are retained
+    indefinitely. Successful replays return the exact original payment snapshot.
+servers:
+- url: http://localhost:8080
+security:
+- bearerAuth: []
+paths:
+  /api/payments:
+    get:
+      operationId: history
+      parameters:
+      - name: page
+        in: query
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 100000
+          default: 0
+      - name: size
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      responses:
+        '200':
+          description: Snapshot of a bounded history page, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - items
+                - page
+                - size
+                - total
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Payment'
+                  page:
+                    type: integer
+                  size:
+                    type: integer
+                  total:
+                    type: integer
+                    format: int64
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      operationId: authorize
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - merchantId
+              - amountMinor
+              - currency
+              properties:
+                merchantId:
+                  type: string
+                  const: merchant_demo
+                amountMinor:
+                  $ref: '#/components/schemas/MinorAmount'
+                currency:
+                  $ref: '#/components/schemas/Currency'
+      responses:
+        '201':
+          $ref: '#/components/responses/CommandResult'
+        '200':
+          $ref: '#/components/responses/Replay'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/payments/{id}:
+    parameters:
+    - $ref: '#/components/parameters/PaymentId'
+    get:
+      operationId: paymentDetail
+      responses:
+        '200':
+          description: Payment, audit timeline and paired postings in one database
+            snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - payment
+                - events
+                - postings
+                properties:
+                  payment:
+                    $ref: '#/components/schemas/Payment'
+                  events:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                      - sequence
+                      - type
+                      - detail
+                      - correlationId
+                      - createdAt
+                      properties:
+                        sequence:
+                          type: integer
+                          format: int64
+                        type:
+                          type: string
+                        detail:
+                          type: string
+                        correlationId:
+                          type: string
+                          format: uuid
+                        createdAt:
+                          type: string
+                          format: date-time
+                  postings:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                      - id
+                      - kind
+                      - debitAccount
+                      - creditAccount
+                      - amountMinor
+                      - currency
+                      - createdAt
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        kind:
+                          type: string
+                          enum:
+                          - CAPTURE
+                          - REFUND
+                        debitAccount:
+                          type: string
+                        creditAccount:
+                          type: string
+                        amountMinor:
+                          $ref: '#/components/schemas/MinorAmount'
+                        currency:
+                          $ref: '#/components/schemas/Currency'
+                        createdAt:
+                          type: string
+                          format: date-time
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/payments/{id}/capture:
+    parameters:
+    - $ref: '#/components/parameters/PaymentId'
+    - $ref: '#/components/parameters/IdempotencyKey'
+    post:
+      operationId: capture
+      description: Full capture of an AUTHORIZED payment. Atomically writes state,
+        ledger, audit, and response.
+      responses:
+        '200':
+          $ref: '#/components/responses/CommandResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/payments/{id}/refund:
+    parameters:
+    - $ref: '#/components/parameters/PaymentId'
+    - $ref: '#/components/parameters/IdempotencyKey'
+    post:
+      operationId: refund
+      description: Positive partial or full refund up to the remaining captured amount.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - amountMinor
+              properties:
+                amountMinor:
+                  $ref: '#/components/schemas/MinorAmount'
+      responses:
+        '200':
+          $ref: '#/components/responses/CommandResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/payments/{id}/reverse:
+    parameters:
+    - $ref: '#/components/parameters/PaymentId'
+    - $ref: '#/components/parameters/IdempotencyKey'
+    post:
+      operationId: reverse
+      description: Release an AUTHORIZED payment. No ledger movement.
+      responses:
+        '200':
+          $ref: '#/components/responses/CommandResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/ledger/reconciliation:
+    get:
+      operationId: reconcile
+      responses:
+        '200':
+          description: Computed per-currency totals and payment-to-posting mismatches.
+            No automatic repair.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required:
+                  - currency
+                  - debitsMinor
+                  - creditsMinor
+                  - unbalancedPayments
+                  - postingCount
+                  - balanced
+                  properties:
+                    currency:
+                      $ref: '#/components/schemas/Currency'
+                    debitsMinor:
+                      type: integer
+                      format: int64
+                    creditsMinor:
+                      type: integer
+                      format: int64
+                    unbalancedPayments:
+                      type: integer
+                      format: int64
+                    postingCount:
+                      type: integer
+                      format: int64
+                    balanced:
+                      type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/events:
+    get:
+      operationId: deliveryEvents
+      parameters:
+      - name: page
+        in: query
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 100000
+          default: 0
+      - name: size
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      responses:
+        '200':
+          description: Newest outbox envelopes and current delivery state in one snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - items
+                - page
+                - size
+                - total
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DeliveryEvent'
+                  page:
+                    type: integer
+                  size:
+                    type: integer
+                  total:
+                    type: integer
+                    format: int64
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/events/{id}:
+    parameters:
+    - $ref: '#/components/parameters/EventId'
+    get:
+      operationId: deliveryDetail
+      responses:
+        '200':
+          $ref: '#/components/responses/DeliveryDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/events/{id}/redeliver:
+    parameters:
+    - $ref: '#/components/parameters/EventId'
+    post:
+      operationId: redeliver
+      description: Worker must be paused. Resets a delivered/dead event to pending
+        with fault NONE and attempts zero. Retains the original envelope, inbox and
+        timeline. Repeating while pending returns 409.
+      responses:
+        '200':
+          $ref: '#/components/responses/DeliveryDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/worker:
+    get:
+      operationId: workerControl
+      responses:
+        '200':
+          $ref: '#/components/responses/WorkerControl'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      operationId: setWorkerRunning
+      description: Persist the single local worker's running/paused setting. Pausing
+        prevents new scheduled claims; an in-flight consumer can finish. Startup preserves
+        the setting.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - running
+              properties:
+                running:
+                  type: boolean
+      responses:
+        '200':
+          $ref: '#/components/responses/WorkerControl'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/worker/step:
+    post:
+      operationId: stepWorker
+      description: Worker must be paused. Advance the logical clock and claim at most
+        one ready event. Omit eventId to choose the oldest ready event. Not idempotent;
+        inspect clock/state after a lost response before stepping again. Ticks are
+        simulation units, not seconds.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - advanceTicks
+              properties:
+                eventId:
+                  type:
+                  - string
+                  - 'null'
+                  format: uuid
+                advanceTicks:
+                  type: integer
+                  minimum: 1
+                  maximum: 16
+      responses:
+        '200':
+          description: Step observation. Inspect persisted event detail for evidence.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - tick
+                - eventId
+                - outcome
+                - detail
+                properties:
+                  tick:
+                    type: integer
+                    format: int64
+                  eventId:
+                    type:
+                    - string
+                    - 'null'
+                    format: uuid
+                  outcome:
+                    type: string
+                    enum:
+                    - IDLE
+                    - DELIVERED
+                    - FENCED
+                    - CRASH_BEFORE_COMMIT
+                    - CRASH_AFTER_COMMIT
+                    - RETRY_SCHEDULED
+                    - DEAD_LETTERED
+                  detail:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/experiments:
+    post:
+      operationId: prepareDeliveryExperiment
+      description: Worker must be paused for a new experiment. Atomically create a
+        12500 USD synthetic authorization, outbox event and fixed fault configuration.
+        Existing keys replay the original experiment identity even if the worker later
+        runs. Different scenarios using the same key conflict.
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 80
+          pattern: ^[A-Za-z0-9._:-]+$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - scenario
+              properties:
+                scenario:
+                  $ref: '#/components/schemas/DeliveryFault'
+      responses:
+        '201':
+          $ref: '#/components/responses/ExperimentResult'
+        '200':
+          $ref: '#/components/responses/ExperimentResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /actuator/health:
+    get:
+      operationId: health
+      security: []
+      responses:
+        '200':
+          description: Minimal health status
+        '503':
+          description: A health contributor is down
+  /api/workspace/documents:
+    get:
+      operationId: engineeringDocuments
+      description: Most recent 200 records; workspace limit 1000. Export and delete
+        records individually.
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EngineeringDocument'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          description: Local request or operation budget exhausted; retry after the
+            indicated interval
+      parameters:
+      - name: page
+        in: query
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 4
+          default: 0
+      - name: kind
+        in: query
+        schema: &id008
+          type: string
+          enum:
+          - DIAGRAM
+          - ADR
+          - JOURNAL
+          - LEARNING
+          - POSTMORTEM
+          - REVIEW
+          - INCIDENT
+  /api/workspace/documents/{id}:
+    put:
+      operationId: saveEngineeringDocument
+      description: Authenticated local engineering workspace operation
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EngineeringDocument'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          description: Local request or operation budget exhausted; retry after the
+            indicated interval
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentWrite'
+      parameters: &id001
+      - &id006
+        name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    delete:
+      operationId: deleteEngineeringDocument
+      description: Delete document and all retained revisions. Audit metadata remains;
+        no note body is stored in the audit.
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted: &id003
+                    type: boolean
+                required:
+                - deleted
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          description: Local request or operation budget exhausted; retry after the
+            indicated interval
+      parameters: *id001
+  /api/workspace/documents/{id}/revisions:
+    get:
+      operationId: documentRevisions
+      description: Last 20 versions, including the current version. body_json is serialized
+        JSON text.
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                type: array
+                items: &id002
+                  type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          description: Local request or operation budget exhausted; retry after the
+            indicated interval
+      parameters: *id001
+  /api/workspace/audit:
+    get:
+      operationId: workspaceAudit
+      description: Authenticated local engineering workspace operation
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                type: array
+                items: *id002
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          description: Local request or operation budget exhausted; retry after the
+            indicated interval
+  /api/repository/configuration:
+    get:
+      operationId: repositoryConfiguration
+      description: Authenticated local engineering workspace operation
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema: *id002
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          description: Local request or operation budget exhausted; retry after the
+            indicated interval
+  /api/repository/import:
+    post:
+      operationId: approveRepositoryImport
+      description: 'Read-only Git root relative to configured allowlist root; approved
+        must be true. No repository commands are executed during indexing. Limits:
+        500 source files, 4 MB total, 160 KiB/file, 5000 visited entries, depth 18.'
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepositorySnapshot'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          description: Local request or operation budget exhausted; retry after the
+            indicated interval
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                path:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                approved: *id003
+              required:
+              - path
+              - approved
+  /api/repository:
+    get:
+      operationId: repositorySnapshot
+      description: Authenticated local engineering workspace operation
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepositorySnapshot'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          description: Local request or operation budget exhausted; retry after the
+            indicated interval
+    delete:
+      operationId: deleteRepositorySnapshot
+      description: Authenticated local engineering workspace operation
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted: *id003
+                required:
+                - deleted
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          description: Local request or operation budget exhausted; retry after the
+            indicated interval
+  /api/repository/file:
+    get:
+      operationId: repositoryFile
+      description: Authenticated local engineering workspace operation
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema: *id002
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          description: Local request or operation budget exhausted; retry after the
+            indicated interval
+      parameters: &id005
+      - name: path
+        in: query
+        required: true
+        schema: &id004
+          type: string
+  /api/repository/git:
+    get:
+      operationId: repositoryGitEvidence
+      description: Authenticated local engineering workspace operation
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  history: *id004
+                  changes: *id004
+                required:
+                - history
+                - changes
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          description: Local request or operation budget exhausted; retry after the
+            indicated interval
+      parameters: *id005
+  /api/assistant/configuration:
+    get:
+      operationId: assistantConfiguration
+      description: Authenticated local engineering workspace operation
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema: *id002
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          description: Local request or operation budget exhausted; retry after the
+            indicated interval
+  /api/assistant/preview:
+    post:
+      operationId: previewAssistantContext
+      description: Authenticated local engineering workspace operation
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SourceContext'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          description: Local request or operation budget exhausted; retry after the
+            indicated interval
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                question:
+                  type: string
+                  minLength: 1
+                  maxLength: 1500
+              required:
+              - question
+  /api/assistant:
+    post:
+      operationId: engineeringAssistant
+      description: No model by default. Provider transmission requires useProvider=true,
+        approved=true and exact content-hashed citation IDs from preview; provider
+        failure or invalid citations returns local evidence.
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EngineeringAnswer'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          description: Local request or operation budget exhausted; retry after the
+            indicated interval
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Ask'
+  /api/observability/metrics:
+    get:
+      operationId: measuredMetrics
+      description: Authenticated local engineering workspace operation
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema: *id002
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          description: Local request or operation budget exhausted; retry after the
+            indicated interval
+  /api/observability/traces:
+    get:
+      operationId: retainedOtelSpans
+      description: Authenticated local engineering workspace operation
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TraceSpan'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          description: Local request or operation budget exhausted; retry after the
+            indicated interval
+  /api/observability/incidents:
+    post:
+      operationId: controlledInvestigation
+      description: Authenticated local engineering workspace operation
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Investigation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          description: Local request or operation budget exhausted; retry after the
+            indicated interval
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                scenario:
+                  type: string
+                  enum: &id009
+                  - SLOW_QUERY
+                  - LOCK_CONTENTION
+                  - DOWNSTREAM_TIMEOUT
+                  - CONNECTION_EXHAUSTION
+                  - EXCESSIVE_RETRIES
+                  - CACHE_MISSES
+                  - QUEUE_BACKLOG
+                  - MISCONFIGURED_TIMEOUT
+              required:
+              - scenario
+  /api/simulations:
+    post:
+      operationId: discreteEventExperiment
+      description: Authenticated local engineering workspace operation
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimulationResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          description: Local request or operation budget exhausted; retry after the
+            indicated interval
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                scenario:
+                  type: string
+                  enum: &id011
+                  - SAGA_COMPENSATION
+                  - CIRCUIT_BREAKER
+                  - RATE_LIMIT
+                  - BULKHEAD
+                  - CACHE_INVALIDATION
+                  - OPTIMISTIC_LOCK
+                  - PESSIMISTIC_LOCK
+                  - SYNC_ASYNC
+                  - LOST_RESPONSE
+                  - LEDGER_REPAIR
+                  - SLO_BUDGET
+                  - TIMEOUT_POLICY
+                seed:
+                  type: integer
+                  format: int64
+              required:
+              - scenario
+              - seed
+  /api/webhooks/demo/{id}:
+    post:
+      operationId: signedLoopbackWebhookDemo
+      description: Three signed real HTTP deliveries to the fixed loopback receiver.
+        Requires an existing outbox event. Never accepts destination URLs.
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema: *id002
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          description: Local request or operation budget exhausted; retry after the
+            indicated interval
+      parameters: *id001
+  /api/webhooks/receive/{id}:
+    post:
+      operationId: signedLocalWebhookReceiver
+      description: HMAC-SHA256(timestamp.eventId.exactBody), API token as local demonstration
+        signing key, timestamp at most 300 seconds old or 30 seconds future. Reject
+        changed envelope or reused ID with changed bytes. Production signing key separation
+        is required before external delivery.
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema: *id002
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          description: Local request or operation budget exhausted; retry after the
+            indicated interval
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: *id002
+      parameters:
+      - *id006
+      - name: X-Atlas-Timestamp
+        in: header
+        required: true
+        schema: *id004
+      - name: X-Atlas-Signature
+        in: header
+        required: true
+        schema: *id004
+  /api/repository/metadata:
+    get:
+      operationId: repositoryManifestMetadata
+      description: Declared manifest dependencies, framework signals and top-level
+        folders; no installs, builds, entity resolution or network acquisition.
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema: *id002
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          description: Local request or operation budget exhausted; retry after the
+            indicated interval
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    EventId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    PaymentId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 100
+        pattern: ^[A-Za-z0-9._:-]+$
+  schemas:
+    DeliveryFault:
+      type: string
+      enum:
+      - NONE
+      - CRASH_BEFORE_COMMIT_ONCE
+      - CRASH_AFTER_COMMIT_ONCE
+      - ALWAYS_FAIL
+    DeliveryEvent:
+      type: object
+      required:
+      - eventId
+      - paymentId
+      - eventType
+      - payload
+      - status
+      - fault
+      - attempts
+      - nextTick
+      - leaseUntilTick
+      - effects
+      - duplicatesSuppressed
+      - createdAt
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        paymentId:
+          type: string
+          format: uuid
+        eventType:
+          type: string
+        payload:
+          type: object
+          required:
+          - schemaVersion
+          - paymentId
+          - eventType
+          - status
+          - currency
+          - amountMinor
+          - capturedMinor
+          - refundedMinor
+          - paymentVersion
+          - correlationId
+          properties:
+            schemaVersion:
+              type: integer
+              const: 1
+            paymentId:
+              type: string
+              format: uuid
+            eventType:
+              type: string
+            status:
+              type: string
+            currency:
+              $ref: '#/components/schemas/Currency'
+            amountMinor:
+              $ref: '#/components/schemas/MinorAmount'
+            capturedMinor:
+              type: integer
+              format: int64
+            refundedMinor:
+              type: integer
+              format: int64
+            paymentVersion:
+              type: integer
+              format: int64
+            correlationId:
+              type: string
+              format: uuid
+        status:
+          type: string
+          enum:
+          - PENDING
+          - PROCESSING
+          - RETRY
+          - DELIVERED
+          - DEAD
+        fault:
+          $ref: '#/components/schemas/DeliveryFault'
+        attempts:
+          type: integer
+          minimum: 0
+          maximum: 3
+        nextTick:
+          type: integer
+          format: int64
+        leaseUntilTick:
+          type:
+          - integer
+          - 'null'
+          format: int64
+        effects:
+          type: integer
+          minimum: 0
+          maximum: 1
+        duplicatesSuppressed:
+          type: integer
+          format: int64
+          minimum: 0
+        createdAt:
+          type: string
+          format: date-time
+    MinorAmount:
+      type: integer
+      format: int64
+      minimum: 1
+      maximum: 1000000000000
+    Currency:
+      type: string
+      enum:
+      - USD
+      - EUR
+      - INR
+    Payment:
+      type: object
+      required:
+      - id
+      - merchantId
+      - amountMinor
+      - currency
+      - status
+      - capturedMinor
+      - refundedMinor
+      - version
+      - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        merchantId:
+          type: string
+        amountMinor:
+          $ref: '#/components/schemas/MinorAmount'
+        currency:
+          $ref: '#/components/schemas/Currency'
+        status:
+          type: string
+          enum:
+          - AUTHORIZED
+          - DECLINED
+          - CAPTURED
+          - REFUNDED
+          - REVERSED
+        capturedMinor:
+          type: integer
+          format: int64
+          minimum: 0
+        refundedMinor:
+          type: integer
+          format: int64
+          minimum: 0
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+        createdAt:
+          type: string
+          format: date-time
+    Result:
+      type: object
+      required:
+      - payment
+      - replayed
+      properties:
+        payment:
+          $ref: '#/components/schemas/Payment'
+        replayed:
+          type: boolean
+    Error:
+      type: object
+      required:
+      - code
+      - message
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        correlationId:
+          type: string
+          format: uuid
+    SourceContext:
+      type: object
+      properties:
+        id: *id004
+        path: *id004
+        startLine: &id007
+          type: integer
+        endLine: *id007
+        text: *id004
+      required:
+      - id
+      - path
+      - startLine
+      - endLine
+      - text
+    EngineeringDocument:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind: *id008
+        title:
+          type: string
+          maxLength: 120
+        version: *id007
+        body: *id002
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+      - id
+      - kind
+      - title
+      - version
+      - body
+      - updatedAt
+    DocumentWrite:
+      type: object
+      properties:
+        kind: *id008
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        expectedVersion:
+          type: integer
+          minimum: 0
+        body:
+          type: object
+          description: UTF-8 JSON at most 12000 bytes. DIAGRAM requires validated
+            nodes, edges and assumptions; at most 24 components and 48 edges.
+      required:
+      - kind
+      - title
+      - expectedVersion
+      - body
+    RepositorySnapshot:
+      type: object
+      properties:
+        id: *id004
+        files:
+          type: array
+          items:
+            type: object
+            properties:
+              path: *id004
+              language: *id004
+              lines: *id007
+              content: *id004
+              warnings:
+                type: array
+                items: *id004
+            required:
+            - path
+            - language
+            - lines
+            - content
+            - warnings
+        symbols:
+          type: array
+          items:
+            type: object
+            properties:
+              path: *id004
+              line: *id007
+              endLine: *id007
+              name: *id004
+              kind: *id004
+              detail: *id004
+            required:
+            - path
+            - line
+            - endLine
+            - name
+            - kind
+            - detail
+        edges:
+          type: array
+          items: *id002
+        calls:
+          type: array
+          items: *id002
+        findings:
+          type: array
+          items: *id004
+        languages:
+          type: object
+          additionalProperties: *id007
+        bytes: *id007
+      required:
+      - id
+      - files
+      - symbols
+      - edges
+      - calls
+      - findings
+      - languages
+      - bytes
+    Ask:
+      type: object
+      properties:
+        question:
+          type: string
+          minLength: 1
+          maxLength: 1500
+        useProvider: *id003
+        approved: *id003
+        approvedIds:
+          type: array
+          maxItems: 5
+          items: *id004
+      required:
+      - question
+      - useProvider
+      - approved
+    EngineeringAnswer:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum:
+          - LOCAL_EVIDENCE
+          - PROVIDER
+        answer: *id004
+        citations:
+          type: array
+          items:
+            $ref: '#/components/schemas/SourceContext'
+        uncertainty:
+          type: array
+          items: *id004
+      required:
+      - mode
+      - answer
+      - citations
+      - uncertainty
+    TraceSpan:
+      type: object
+      properties:
+        traceId: *id004
+        spanId: *id004
+        parentId: *id004
+        name: *id004
+        durationMs:
+          type: number
+        status: *id004
+        correlationId: *id004
+        startedAt:
+          type: string
+          format: date-time
+      required:
+      - traceId
+      - spanId
+      - parentId
+      - name
+      - durationMs
+      - status
+      - correlationId
+      - startedAt
+    Investigation:
+      type: object
+      properties:
+        id: *id004
+        scenario:
+          type: string
+          enum: *id009
+        baseline:
+          type: array
+          items: &id010
+            type: object
+            properties:
+              traceId: *id004
+              durationMs:
+                type: number
+              outcome: *id004
+            required:
+            - traceId
+            - durationMs
+            - outcome
+        affected:
+          type: array
+          items: *id010
+        hypothesis: *id004
+        validation: *id004
+        scope: *id004
+      required:
+      - id
+      - scenario
+      - baseline
+      - affected
+      - hypothesis
+      - validation
+      - scope
+    SimulationResult:
+      type: object
+      properties:
+        scenario:
+          type: string
+          enum: *id011
+        seed:
+          type: integer
+          format: int64
+        before: *id002
+        after: *id002
+        timeline:
+          type: array
+          items:
+            type: object
+            properties:
+              tick: *id007
+              action: *id004
+              evidence: *id004
+            required:
+            - tick
+            - action
+            - evidence
+        invariant: *id003
+        explanation: *id004
+        scope: *id004
+      required:
+      - scenario
+      - seed
+      - before
+      - after
+      - timeline
+      - invariant
+      - explanation
+      - scope
+  responses:
+    DeliveryDetail:
+      description: Event plus its latest 100 timeline entries, displayed oldest to
+        newest
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+            - event
+            - timeline
+            properties:
+              event:
+                $ref: '#/components/schemas/DeliveryEvent'
+              timeline:
+                type: array
+                maxItems: 100
+                items:
+                  type: object
+                  required:
+                  - sequence
+                  - tick
+                  - attempt
+                  - kind
+                  - detail
+                  - createdAt
+                  properties:
+                    sequence:
+                      type: integer
+                      format: int64
+                    tick:
+                      type: integer
+                      format: int64
+                    attempt:
+                      type: integer
+                    kind:
+                      type: string
+                    detail:
+                      type: string
+                    createdAt:
+                      type: string
+                      format: date-time
+    WorkerControl:
+      description: Persisted clock/setting and real aggregate queue counts
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+            - tick
+            - running
+            - pending
+            - processing
+            - retry
+            - delivered
+            - dead
+            - effects
+            properties:
+              tick:
+                type: integer
+                format: int64
+              running:
+                type: boolean
+              pending:
+                type: integer
+                format: int64
+              processing:
+                type: integer
+                format: int64
+              retry:
+                type: integer
+                format: int64
+              delivered:
+                type: integer
+                format: int64
+              dead:
+                type: integer
+                format: int64
+              effects:
+                type: integer
+                format: int64
+    ExperimentResult:
+      description: Stable experiment identity, with a replay marker
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+            - id
+            - eventId
+            - scenario
+            - replayed
+            properties:
+              id:
+                type: string
+                format: uuid
+              eventId:
+                type: string
+                format: uuid
+              scenario:
+                $ref: '#/components/schemas/DeliveryFault'
+              replayed:
+                type: boolean
+    CommandResult:
+      description: Successful command or exact response replay (check replayed).
+      headers:
+        Idempotency-Replayed:
+          schema:
+            type: boolean
+        X-Correlation-ID:
+          schema:
+            type: string
+            format: uuid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Result'
+    Replay:
+      description: Original successful response returned without new business effects.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Result'
+    BadRequest:
+      description: Invalid JSON, fields, identifier, pagination or key.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Missing or invalid bearer token.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: Invalid state, excess refund, key conflict, running worker during
+        manual control, or an event not eligible for redelivery.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Requested payment or outbox event does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

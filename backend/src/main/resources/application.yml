@@ -1,0 +1,40 @@
+spring:
+  application:
+    name: atlas
+  datasource:
+    url: ${ATLAS_DB_URL:jdbc:postgresql://localhost:5434/atlas}
+    username: ${ATLAS_DB_USER:atlas}
+    password: ${ATLAS_DB_PASSWORD:atlas-local-only}
+    hikari:
+      maximum-pool-size: 10
+      connection-timeout: 5000
+      data-source-properties:
+        options: -c statement_timeout=10000 -c lock_timeout=5000
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+      accept-float-as-int: false
+    mapper:
+      allow-coercion-of-scalars: false
+server:
+  address: ${ATLAS_BIND_ADDRESS:127.0.0.1}
+  port: 8080
+  error:
+    include-message: never
+  tomcat:
+    max-http-form-post-size: 16KB
+atlas:
+  api-token: ${ATLAS_API_TOKEN:}
+  repository-root: ${ATLAS_REPOSITORY_ROOT:..}
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+logging:
+  structured:
+    format:
+      console: logstash

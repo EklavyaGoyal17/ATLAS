@@ -1,0 +1,19 @@
+# Engineering scorecard
+
+Conservative self-assessment of the delivered local platform, on a 0–10 scale. These are judgments, not certifications or performance measurements. REQUIREMENTS maps the original request to concrete behavior and limitations.
+
+| Area | Rating | Evidence | Remaining operating/deployment gap |
+|---|---:|---|---|
+| Correctness | 8 | Atomic idempotent payments, row/key locks, paired ledger, reconciliation, generated refund sequences, document compare-and-set | One fictional merchant, full capture only; no expiry/settlement/FX |
+| Reliability | 7 | Durable outbox/inbox, lease fencing, bounded retries, signed duplicate HTTP receipt and fresh-JVM recovery | One database, no HA/broker failover/OS power-loss/restore drill |
+| Security | 7 | Stateless local auth, rate/body budgets, safe import/redaction, XML entity rejection, content-bound model approval, no model execution tools, runtime scans | Local single identity, heuristic masking, no TLS/pen-test/shared roles; stable checkout required |
+| Tests | 8 | Full host/Java 21 Linux suites, real-Compose browser workflows, concurrency/migrations/restart, all model/incident recipes | Chromium only; limited adversarial corpus and workload breadth |
+| Architecture | 8 | Six backend packages, explicit transaction boundaries, typed provider, nine ADRs, central API contract | Hand-maintained DTO contract; monolithic store/database availability boundary |
+| Observability | 7 | Real OTel HTTP/JDBC/W3C evidence, measured bounded distributions, queue state, incident comparisons and postmortems | In-memory trace retention; synthetic dependency recipes are not fleet monitoring |
+| Performance | 5 | Bounded imports/pages/queues/requests, database deadlines, repeatable duplicate/read load scripts | Small warm local runs; no capacity or production SLO claim |
+| Documentation | 8 | Setup/fallback, architecture, decisions, security/privacy, five runnable demos, original requirement mapping and measured results | Independent new-developer onboarding and restore review remain |
+| User experience | 7 | Responsive dark console, keyboard palette/dialogs/source graph/editor, actual data, source citations, saved notes/versions and exports | No manual assistive-technology review or broad browser matrix |
+| Maintainability | 7 | Immutable records, bounded features, modular components, tested failure boundaries and pinned dependencies | Further package decomposition, API type generation and operational retention need ongoing work |
+| Usefulness | 8 | Connected payment, incident, source, assistant, design and growth workflows | Live model quality, hosted CI and shared deployment assurance require external setup |
+
+TESTING contains executed results. A configured workflow is not a hosted CI run; a validated citation ID is not proof of an explanation; a logical simulation is not a deployed distributed service; heuristic rubric coverage is not a competence score. The user should read, run and personally modify important paths before presenting them as work they understand.

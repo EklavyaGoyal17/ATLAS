@@ -1,0 +1,12 @@
+.env
+**/target/
+**/node_modules/
+frontend/dist/
+frontend/playwright-report/
+frontend/test-results/
+*.log
+.runtime/
+.idea/
+.vscode/
+*.zip
+frontend/tsconfig.tsbuildinfo

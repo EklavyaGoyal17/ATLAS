@@ -1,0 +1,2 @@
+# ADR 005: Loopback, bearer token, no external AI
+Context: a useful personal lab needs privacy without an identity platform. Decision: local-only binding, configured bearer token, same-origin console, memory-only credentials, no external AI calls. Alternatives: unauthenticated local API; cookie sessions; hosted OIDC. Tradeoff: one privileged engineer identity and manual token management. Consequences: remote hosting requires a new security review; no sensitive repository content is uploaded. Review: before any shared deployment or model provider.

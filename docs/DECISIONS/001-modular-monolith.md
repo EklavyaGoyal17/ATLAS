@@ -1,0 +1,2 @@
+# ADR 001: One deployable backend
+Context: the first user journey fits one transaction boundary. Decision: one Spring Boot app with explicit payment and platform packages. Alternatives: microservices, separate ledger service. Tradeoff: deployment simplicity and atomic consistency over independent scaling. Consequences: no network partitions are simulated yet; extract adapters when a concrete experiment needs them. Review: before phase 3.
