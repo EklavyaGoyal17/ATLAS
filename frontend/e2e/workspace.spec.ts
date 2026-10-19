@@ -87,7 +87,13 @@ test("architecture review resolves source declarations and exports the approved 
   await review
     .getByLabel("Find analyzed type")
     .fill("dev.atlas.payments.PaymentService");
-  await review.locator(".symbol-list button").first().click();
+  const declarations = review.locator(".symbol-list");
+  const serviceButton = declarations.getByRole("button", {
+    name: /^dev\.atlas\.payments\.PaymentService\s/,
+  });
+  await expect(serviceButton).toHaveCount(1);
+  await expect(declarations.getByRole("button")).toHaveCount(1);
+  await serviceButton.click();
   await expect(page.locator(".source-code")).toContainText(
     "class PaymentService",
   );
