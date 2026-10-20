@@ -96,6 +96,66 @@ class RepositoryImpactIntegrationTest {
     }
 
     @Test
+    void metadataRequiresAuthenticationAndReturnsSnapshotBoundInventory()
+        throws Exception {
+        assertThat(get("/repository/metadata", false).statusCode()).isEqualTo(
+            401
+        );
+        assertThat(get("/repository/metadata", true).statusCode()).isEqualTo(
+            409
+        );
+        var snapshot = index.index(".", true);
+        var response = get(
+            "/repository/metadata?snapshotId=" + snapshot.id(),
+            true
+        );
+        assertThat(response.statusCode()).isEqualTo(200);
+        var report = json.readTree(response.body());
+        assertThat(report.get("snapshotId").asString()).isEqualTo(
+            snapshot.id().toString()
+        );
+        assertThat(report.get("languages").size()).isEqualTo(2);
+        var java = report.get("languages").get(0);
+        assertThat(java.get("language").asString()).isEqualTo("java");
+        assertThat(java.get("files").asInt()).isEqualTo(3);
+        assertThat(java.get("paths").toString()).contains(
+            "Endpoint.java",
+            "Service.java",
+            "Store.java"
+        );
+        assertThat(
+            get("/repository/metadata?snapshotId=invalid", true).statusCode()
+        ).isEqualTo(400);
+        index.index(".", true);
+        var stale = get(
+            "/repository/metadata?snapshotId=" + snapshot.id(),
+            true
+        );
+        assertThat(stale.statusCode()).isEqualTo(409);
+        assertThat(
+            json.readTree(stale.body()).get("code").asString()
+        ).isEqualTo("STALE_SNAPSHOT");
+        index.clear();
+        assertThat(
+            get(
+                "/repository/metadata?snapshotId=" + snapshot.id(),
+                true
+            ).statusCode()
+        ).isEqualTo(409);
+    }
+
+    HttpResponse<String> get(String path, boolean authorized) throws Exception {
+        var builder = HttpRequest.newBuilder(
+            URI.create("http://127.0.0.1:" + port + "/api" + path)
+        ).GET();
+        if (authorized) builder.header("Authorization", "Bearer " + TOKEN);
+        return client.send(
+            builder.build(),
+            HttpResponse.BodyHandlers.ofString()
+        );
+    }
+
+    @Test
     void githubImportRequiresAuthenticationApprovalAndStrictRequestBounds()
         throws Exception {
         var body = Map.of(

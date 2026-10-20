@@ -53,7 +53,29 @@ for (const url of repositories) {
   assert.ok(git.changes.includes("no local working-tree diff"));
   const graph = await api("/repository/architecture");
   assert.equal(graph.snapshotId, snapshot.id);
-  const metadata = await api("/repository/metadata");
+  const metadata = await api(`/repository/metadata?snapshotId=${snapshot.id}`);
+  assert.equal(metadata.snapshotId, snapshot.id);
+  assert.deepEqual(
+    metadata.languages.flatMap((entry) => entry.paths).sort(),
+    snapshot.files.map((entry) => entry.path).sort(),
+  );
+  for (const entry of metadata.languages) {
+    const files = snapshot.files.filter(
+      (item) => item.language === entry.language,
+    );
+    assert.equal(entry.files, files.length);
+    assert.equal(
+      entry.lines,
+      files.reduce((sum, item) => sum + item.lines, 0),
+    );
+    assert.equal(
+      entry.contentBytes,
+      files.reduce(
+        (sum, item) => sum + Buffer.byteLength(item.content, "utf8"),
+        0,
+      ),
+    );
+  }
   if (snapshot.files.some((item) => item.language === "java"))
     assert.ok(graph.types.length > 0);
   const impact = await api("/repository/impact", {
@@ -76,6 +98,8 @@ for (const url of repositories) {
         sourceReadVerified: true,
         archiveProvenanceVerified: true,
         impactSnapshotVerified: true,
+        metadataSnapshotVerified: true,
+        inventoryVerified: true,
         scope:
           "Actual anonymous GitHub source download and local static analysis; no imported execution or model call.",
       },

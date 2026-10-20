@@ -2092,6 +2092,37 @@ code {
   border: 1px solid #2e404b;
   border-radius: 8px;
 }
+.repository-inventory {
+  min-width: 0;
+}
+.repository-inventory caption {
+  text-align: left;
+  padding: 8px 0;
+}
+.repository-inventory th,
+.repository-inventory td {
+  white-space: normal;
+}
+.inventory-filters {
+  margin-top: 16px;
+}
+.inventory-filters > label {
+  min-width: min(220px, 100%);
+}
+.inventory-paths {
+  max-height: 260px;
+  overflow-y: auto;
+  padding-left: 22px;
+}
+.inventory-paths li {
+  padding: 5px 0;
+}
+.inventory-paths button {
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
 .repository-import p,
 .repository-origin code,
 .repository-origin a {

@@ -46,8 +46,10 @@ public class RepositoryController {
     }
 
     @GetMapping("/metadata")
-    public RepositoryMetadata.Report metadata() {
-        return metadata.report();
+    public RepositoryMetadata.Report metadata(
+        @RequestParam(required = false) UUID snapshotId
+    ) {
+        return metadata.report(snapshotId);
     }
 
     @GetMapping("/architecture")

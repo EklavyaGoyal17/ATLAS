@@ -66,27 +66,41 @@ test("architecture review resolves source declarations and exports the approved 
   await page
     .getByRole("button", { name: "Code intelligence", exact: true })
     .click();
+  // Warm both keyed analysis siblings before replacing the snapshot. A
+  // replacement must remove their old DOM and event handlers together.
   await page.getByLabel("I approve reading this repository").check();
-  const imported = page.waitForResponse(
-    (r) =>
-      new URL(r.url()).pathname === "/api/repository/import" &&
-      r.request().method() === "POST",
-  );
-  await page
-    .getByRole("button", { name: "Import repository", exact: true })
-    .click();
-  const snapshot = await (await imported).json();
   const review = page.getByRole("region", {
     name: "Architecture review",
     exact: true,
   });
-  await expect(review.locator(".architecture-summary")).toContainText(
-    "resolved types",
-    { timeout: 20000 },
-  );
+  let snapshot: { id: string };
+  for (let replacement = 0; replacement < 2; replacement++) {
+    const imported = page.waitForResponse(
+      (r) =>
+        new URL(r.url()).pathname === "/api/repository/import" &&
+        r.request().method() === "POST",
+    );
+    await page
+      .getByRole("button", { name: "Import repository", exact: true })
+      .click();
+    snapshot = await (await imported).json();
+    await expect(review.locator(".architecture-summary")).toContainText(
+      "resolved types",
+      { timeout: 20000 },
+    );
+    await expect(
+      page.getByRole("region", { name: "Change impact explorer", exact: true }),
+    ).toBeVisible();
+    await expect(review).toHaveCount(1);
+    await expect(page.locator(".architecture-review")).toHaveCount(1);
+    await expect(page.locator(".change-impact")).toHaveCount(1);
+  }
   await review
     .getByLabel("Find analyzed type")
     .fill("dev.atlas.payments.PaymentService");
+  await expect(review.getByLabel("Find analyzed type")).toHaveValue(
+    "dev.atlas.payments.PaymentService",
+  );
   const declarations = review.locator(".symbol-list");
   const serviceButton = declarations.getByRole("button", {
     name: /^dev\.atlas\.payments\.PaymentService\s/,
@@ -104,7 +118,7 @@ test("architecture review resolves source declarations and exports the approved 
   const report = JSON.parse(
     await readFile((await (await exported).path())!, "utf8"),
   );
-  expect(report.snapshotId).toBe(snapshot.id);
+  expect(report.snapshotId).toBe(snapshot!.id);
   const service = report.types.find(
     (t: { name: string }) => t.name === "dev.atlas.payments.PaymentService",
   );

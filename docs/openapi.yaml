@@ -1140,14 +1140,23 @@ paths:
   /api/repository/metadata:
     get:
       operationId: repositoryManifestMetadata
-      description: Declared manifest dependencies, framework signals and top-level
-        folders; no installs, builds, entity resolution or network acquisition.
+      description: Snapshot-bound indexed language inventory, declared npm/Maven/Python/Go
+        manifest dependencies, framework signals and top-level folders. No installs,
+        builds, entity resolution or network acquisition. Language labels are extensions;
+        bytes count redacted UTF-8 text. Unsupported syntax is reported in limitations.
+      parameters:
+      - name: snapshotId
+        in: query
+        required: false
+        description: Expected approved snapshot. A mismatch returns STALE_SNAPSHOT (409).
+        schema: {type: string, format: uuid}
       responses:
         '200':
           description: Successful operation
           content:
             application/json:
-              schema: *id002
+              schema:
+                $ref: '#/components/schemas/RepositoryMetadata'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1483,6 +1492,47 @@ components:
       - title
       - expectedVersion
       - body
+    RepositoryMetadata:
+      type: object
+      required: [snapshotId, modules, languages, dependencies, signals, limitations]
+      properties:
+        snapshotId: {type: string, format: uuid}
+        modules:
+          type: array
+          items: {type: string}
+          description: Indexed top-level folders; deployment boundaries are not inferred.
+        languages:
+          type: array
+          items:
+            type: object
+            required: [language, files, lines, contentBytes, paths]
+            properties:
+              language: {type: string, description: Indexed filename extension.}
+              files: {type: integer, minimum: 0, maximum: 500}
+              lines: {type: integer, minimum: 0, format: int64}
+              contentBytes: {type: integer, minimum: 0, format: int64, description: UTF-8 bytes after redaction.}
+              paths:
+                type: array
+                maxItems: 500
+                items: {type: string}
+        dependencies:
+          type: array
+          maxItems: 2000
+          items:
+            type: object
+            required: [ecosystem, name, declaredVersion, path, line]
+            properties:
+              ecosystem: {type: string}
+              name: {type: string, maxLength: 500}
+              declaredVersion: {type: string, maxLength: 2000, description: Literal declaration; never resolved or installed.}
+              path: {type: string, description: Exact indexed manifest path.}
+              line: {type: integer, minimum: 0, description: Exact Python/Go declaration line; zero denotes file-level npm/Maven evidence.}
+        signals:
+          type: array
+          items: {type: string}
+        limitations:
+          type: array
+          items: {type: string}
     RepositoryOrigin:
       type: object
       properties:

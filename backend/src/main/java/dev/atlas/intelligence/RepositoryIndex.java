@@ -182,10 +182,11 @@ public class RepositoryIndex {
         ) return false;
         int dot = name.lastIndexOf('.');
         return (
-            dot >= 0 &&
-            EXTENSIONS.contains(
-                name.substring(dot + 1).toLowerCase(Locale.ROOT)
-            )
+            name.equals("go.mod") ||
+            (dot >= 0 &&
+                EXTENSIONS.contains(
+                    name.substring(dot + 1).toLowerCase(Locale.ROOT)
+                ))
         );
     }
 
@@ -402,7 +403,7 @@ public class RepositoryIndex {
                                 )
                         ) return FileVisitResult.CONTINUE;
                         if (
-                            !EXTENSIONS.contains(ext)
+                            !EXTENSIONS.contains(ext) && !name.equals("go.mod")
                         ) return FileVisitResult.CONTINUE;
                         if (attrs.size() > 160000) {
                             findings.add(

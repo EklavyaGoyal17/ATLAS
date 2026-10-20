@@ -58,6 +58,125 @@ type Snapshot = {
 type ImportRequest =
   | { kind: "LOCAL"; path: string; approved: boolean }
   | { kind: "GITHUB"; url: string; directory: string; approved: boolean };
+type RepositoryMetadata = {
+  snapshotId: string;
+  modules: string[];
+  languages: {
+    language: string;
+    files: number;
+    lines: number;
+    contentBytes: number;
+    paths: string[];
+  }[];
+  dependencies: {
+    ecosystem: string;
+    name: string;
+    declaredVersion: string;
+    path: string;
+    line: number;
+  }[];
+  signals: string[];
+  limitations: string[];
+};
+
+function RepositoryInventory({
+  report,
+  indexedFiles,
+  open,
+}: {
+  report: RepositoryMetadata;
+  indexedFiles: Source[];
+  open: (path: string, line: number) => void;
+}) {
+  const [language, setLanguage] = useState("");
+  const [pathSearch, setPathSearch] = useState("");
+  const indexedPaths = new Set(indexedFiles.map((file) => file.path));
+  const paths = report.languages
+    .filter((entry) => !language || entry.language === language)
+    .flatMap((entry) => entry.paths)
+    .filter(
+      (path) =>
+        indexedPaths.has(path) &&
+        path.toLowerCase().includes(pathSearch.toLowerCase()),
+    );
+  return (
+    <section
+      className="panel padded repository-inventory"
+      aria-labelledby="repository-inventory-title"
+    >
+      <h2 id="repository-inventory-title">Repository inventory</h2>
+      <p>
+        Counts cover indexed, redacted text in this snapshot. They do not count
+        the entire GitHub repository or Git history. Language groups follow file
+        extensions; structured AST analysis currently covers Java only.
+      </p>
+      <div className="table-scroll">
+        <table>
+          <caption>Indexed text by language or file extension</caption>
+          <thead>
+            <tr>
+              <th scope="col">Language / extension</th>
+              <th scope="col">Files</th>
+              <th scope="col">Lines</th>
+              <th scope="col">Redacted UTF-8 text bytes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {report.languages.map((entry) => (
+              <tr key={entry.language}>
+                <th scope="row">{entry.language}</th>
+                <td>{entry.files.toLocaleString()}</td>
+                <td>{entry.lines.toLocaleString()}</td>
+                <td>{entry.contentBytes.toLocaleString()}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="form-row inventory-filters">
+        <label>
+          Filter indexed language
+          <select
+            value={language}
+            onChange={(e) => setLanguage(e.target.value)}
+          >
+            <option value="">All indexed languages</option>
+            {report.languages.map((entry) => (
+              <option key={entry.language} value={entry.language}>
+                {entry.language}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Search indexed paths
+          <input
+            value={pathSearch}
+            onChange={(e) => setPathSearch(e.target.value)}
+            placeholder="e.g. src/main.py"
+          />
+        </label>
+      </div>
+      <p role="status">{paths.length} matching indexed files</p>
+      {paths.length ? (
+        <ul className="inventory-paths">
+          {paths.map((path) => (
+            <li key={path}>
+              <button className="text-button" onClick={() => open(path, 1)}>
+                Open {path}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p>
+          No indexed paths match these filters. Choose another language or clear
+          the path search.
+        </p>
+      )}
+    </section>
+  );
+}
 function githubOriginLink(origin: Snapshot["origin"]) {
   if (
     origin?.kind !== "GITHUB" ||
@@ -245,20 +364,17 @@ export function Intelligence({
   const metadata = useQuery({
     queryKey: ["repository-metadata", data?.id],
     queryFn: () =>
-      api<{
-        modules: string[];
-        dependencies: {
-          ecosystem: string;
-          name: string;
-          declaredVersion: string;
-          path: string;
-        }[];
-        signals: string[];
-        limitations: string[];
-      }>(token, "/repository/metadata"),
-    enabled: !!data,
+      api<RepositoryMetadata>(
+        token,
+        `/repository/metadata?snapshotId=${encodeURIComponent(data!.id)}`,
+      ),
+    enabled: !!data && !importBusy,
     retry: false,
   });
+  const currentMetadata =
+    !importBusy && metadata.data?.snapshotId === data?.id
+      ? metadata.data
+      : null;
   const file = data?.files.find((f) => f.path === selected);
   function invalidateAssistance() {
     intent.current++;
@@ -608,6 +724,53 @@ export function Intelligence({
               </div>
             )}
           </section>
+          {!importBusy && metadata.isPending && (
+            <p role="status">Reading indexed repository inventory…</p>
+          )}
+          {!importBusy && metadata.isError && (
+            <button
+              className="secondary"
+              disabled={metadata.isFetching}
+              onClick={() =>
+                void cache
+                  .invalidateQueries({ queryKey: ["repository"] })
+                  .then(() =>
+                    cache.invalidateQueries({
+                      queryKey: ["repository-metadata"],
+                    }),
+                  )
+              }
+            >
+              Retry repository inventory
+            </button>
+          )}
+          {!importBusy && metadata.data && !currentMetadata && (
+            <p className="callout">
+              The repository changed while inventory was being read.{" "}
+              <button
+                className="text-button"
+                onClick={() =>
+                  void cache
+                    .invalidateQueries({ queryKey: ["repository"] })
+                    .then(() =>
+                      cache.invalidateQueries({
+                        queryKey: ["repository-metadata"],
+                      }),
+                    )
+                }
+              >
+                Refresh repository inventory
+              </button>
+            </p>
+          )}
+          {currentMetadata && (
+            <RepositoryInventory
+              key={`${token}:${data.id}`}
+              report={currentMetadata}
+              indexedFiles={data.files}
+              open={open}
+            />
+          )}
           <div className="two-columns repository-layout">
             <section className="panel padded">
               <h2>Symbols & files</h2>
@@ -657,16 +820,18 @@ export function Intelligence({
                 </p>
               ))}
               <pre className="source-code">
-                {file?.content.split(/\r?\n/).map((text, i) => (
-                  <div
-                    id={`source-line-${i + 1}`}
-                    className={line === i + 1 ? "highlight-line" : ""}
-                    key={i}
-                  >
-                    <span className="line-number">{i + 1}</span>
-                    {text || " "}
-                  </div>
-                ))}
+                {file?.content
+                  .split(/\r\n|[\n\v\f\r\u0085\u2028\u2029]/)
+                  .map((text, i) => (
+                    <div
+                      id={`source-line-${i + 1}`}
+                      className={line === i + 1 ? "highlight-line" : ""}
+                      key={i}
+                    >
+                      <span className="line-number">{i + 1}</span>
+                      {text || " "}
+                    </div>
+                  ))}
               </pre>
               {selected && (
                 <details>
@@ -686,27 +851,48 @@ export function Intelligence({
           </div>
           <section className="panel padded">
             <h2>Declared dependency map</h2>
-            {metadata.data && (
+            {currentMetadata && (
               <details>
                 <summary>
                   Modules, framework signals and manifest dependencies
                 </summary>
-                <p>Folders: {metadata.data.modules.join(", ")}</p>
-                <p>{metadata.data.signals.join(" · ")}</p>
-                {metadata.data.dependencies.map((d, i) => (
+                <p>
+                  Folders:{" "}
+                  {currentMetadata.modules.join(", ") ||
+                    "No indexed top-level folders"}
+                </p>
+                <p>
+                  {currentMetadata.signals.join(" · ") ||
+                    "No framework signals found in indexed text."}
+                </p>
+                {!currentMetadata.dependencies.length && (
+                  <p>
+                    No supported dependency declarations were found in indexed
+                    manifests. Review the format limitations below.
+                  </p>
+                )}
+                {currentMetadata.dependencies.map((d, i) => (
                   <p key={i}>
                     <code>
                       {d.ecosystem}: {d.name} · {d.declaredVersion}
                     </code>
                     <button
                       className="text-button"
-                      onClick={() => open(d.path, 1)}
+                      onClick={() =>
+                        open(
+                          d.path,
+                          Number.isInteger(d.line) && d.line > 0 ? d.line : 1,
+                        )
+                      }
                     >
                       Open {d.path}
+                      {Number.isInteger(d.line) && d.line > 0
+                        ? `:${d.line}`
+                        : " (file evidence)"}
                     </button>
                   </p>
                 ))}
-                {metadata.data.limitations.map((l) => (
+                {currentMetadata.limitations.map((l) => (
                   <p className="muted" key={l}>
                     {l}
                   </p>
@@ -779,7 +965,7 @@ export function Intelligence({
           </section>
           {!importBusy && supersededArchitectureRequests === 0 && (
             <ArchitectureReview
-              key={`${token}:${data.id}`}
+              key={`architecture:${token}:${data.id}`}
               token={token}
               snapshotId={data.id}
               open={open}
@@ -790,7 +976,7 @@ export function Intelligence({
           )}
           {!importBusy && architectureSettled && (
             <ChangeImpact
-              key={`${token}:${data.id}`}
+              key={`impact:${token}:${data.id}`}
               token={token}
               snapshotId={data.id}
               files={data.files}
