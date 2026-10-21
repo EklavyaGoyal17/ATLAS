@@ -15,6 +15,7 @@ try {
     $env:ATLAS_API_TOKEN='atlas-local-development-token-change-me'
     $env:ATLAS_TEST_DB_URL='jdbc:postgresql://localhost:5433/atlas_test'
     $env:ATLAS_E2E_EXTERNAL='true'
+    Invoke-AtlasCheck 'backup file, HTTP framing and resource ownership boundaries' { node --test scripts/application-backup-support.test.mjs }
     Invoke-AtlasCheck 'disposable PostgreSQL health' { docker compose --env-file .env.example --profile test up -d --wait test-db }
     Invoke-AtlasCheck 'backend unit, integration, concurrency, migration and recovery tests' { mvn -B -f backend/pom.xml verify }
     Invoke-AtlasCheck 'Java 21 Linux test runner build' { docker build --target build -t atlas-test-runner backend }
@@ -34,6 +35,8 @@ try {
     Invoke-AtlasCheck 'API container restart and duplicate suppression' { node scripts/recovery-check.mjs }
     Invoke-AtlasCheck 'real Git history and tracked diff' { node scripts/git-evidence-check.mjs }
     Invoke-AtlasCheck 'isolated PostgreSQL logical backup and restore' { node scripts/restore-drill.mjs }
+    Invoke-AtlasCheck 'application-created backup and restored API readback' { node scripts/application-backup-drill.mjs }
+    Invoke-AtlasCheck 'application backup cleanup after injected failure' { node scripts/application-backup-drill.mjs --failure-cleanup-check }
     Invoke-AtlasCheck 'bounded read-endpoint latency observations' { node scripts/workspace-load.mjs }
     Write-Host 'All verification stages passed. Local Compose application remains available at http://127.0.0.1:5173.'
 } finally {

@@ -29,6 +29,8 @@ jobs:
           node-version: "24"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      - name: Verify backup file, HTTP framing and resource ownership boundaries
+        run: node --test scripts/application-backup-support.test.mjs
       - run: mvn -B -f backend/pom.xml verify
       - run: npm ci
         working-directory: frontend
@@ -63,6 +65,10 @@ jobs:
         run: node scripts/git-evidence-check.mjs
       - name: Verify PostgreSQL logical backup and restore using synthetic fixtures
         run: node scripts/restore-drill.mjs
+      - name: Verify application backup through a restored API and failure cleanup
+        run: |
+          node scripts/application-backup-drill.mjs
+          node scripts/application-backup-drill.mjs --failure-cleanup-check
       - name: Scan the actual API runtime image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
