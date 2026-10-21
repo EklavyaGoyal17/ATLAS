@@ -22,6 +22,7 @@ try {
     Push-Location (Join-Path $atlasRoot 'frontend')
     try {
         Invoke-AtlasCheck 'locked frontend dependencies' { npm.cmd ci }
+        Invoke-AtlasCheck 'frontend request boundary and deadline tests' { npm.cmd run test:unit }
         Invoke-AtlasCheck 'frontend TypeScript and production build' { npm.cmd run build }
         Invoke-AtlasCheck 'frontend dependency audit' { npm.cmd audit --audit-level=high }
         Invoke-AtlasCheck 'Chromium and Firefox availability' { npx.cmd playwright install chromium firefox }

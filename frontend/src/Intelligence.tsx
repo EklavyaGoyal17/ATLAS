@@ -255,6 +255,9 @@ export function Intelligence({
         request.kind === "GITHUB" ? "/repository/github" : "/repository/import",
         {
           method: "POST",
+          // GitHub metadata, archive headers/body and parsing have separate
+          // bounded server stages. Keep the client deadline above their total.
+          timeoutMs: request.kind === "GITHUB" ? 95000 : undefined,
           body:
             request.kind === "GITHUB"
               ? {

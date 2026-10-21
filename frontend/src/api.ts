@@ -51,7 +51,12 @@ export type Authorization = {
 export async function api<T>(
   token: string,
   path: string,
-  options: { method?: string; body?: unknown; key?: string } = {},
+  options: {
+    method?: string;
+    body?: unknown;
+    key?: string;
+    timeoutMs?: number;
+  } = {},
 ): Promise<T> {
   const response = await fetch(`/api${path}`, {
     method: options.method ?? "GET",
@@ -61,7 +66,7 @@ export async function api<T>(
       ...(options.key ? { "Idempotency-Key": options.key } : {}),
     },
     body: options.body ? JSON.stringify(options.body) : undefined,
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(options.timeoutMs ?? 15000),
   });
   const data = await response.json();
   if (!response.ok)

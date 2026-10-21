@@ -63,6 +63,27 @@ async function approve(page: Page) {
 test("GitHub import UI transport fixture binds approval to URL and scope and displays pinned provenance", async ({
   page,
 }) => {
+  // Observe the actual import caller's deadline without delaying the fixture
+  // response or changing AbortSignal/fetch behavior.
+  await page.addInitScript(() => {
+    const deadlines = new WeakMap<AbortSignal, number>();
+    const recorded: (number | undefined)[] = [];
+    Reflect.set(window, "atlasFixtureGitHubDeadlines", recorded);
+    const originalTimeout = AbortSignal.timeout.bind(AbortSignal);
+    AbortSignal.timeout = (milliseconds) => {
+      const signal = originalTimeout(milliseconds);
+      deadlines.set(signal, milliseconds);
+      return signal;
+    };
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = (input, options) => {
+      if (input === "/api/repository/github")
+        recorded.push(
+          options?.signal ? deadlines.get(options.signal) : undefined,
+        );
+      return originalFetch(input, options);
+    };
+  });
   const payloads: unknown[] = [];
   const modelCalls: string[] = [];
   page.on("request", (request) => {
@@ -114,6 +135,11 @@ test("GitHub import UI transport fixture binds approval to URL and scope and dis
   expect(payloads).toEqual([
     { url: url + ".git", directory: "src", approved: true },
   ]);
+  expect(
+    await page.evaluate(() =>
+      Reflect.get(window, "atlasFixtureGitHubDeadlines"),
+    ),
+  ).toEqual([95000]);
   await expect(page.locator(".repository-import")).toContainText(
     "frontend, backend, library, or full-stack projects",
   );

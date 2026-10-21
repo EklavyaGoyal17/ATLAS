@@ -10,6 +10,8 @@ ATLAS supports frontend, backend, library, infrastructure and full-stack source 
 
 No GitHub API key or AI subscription is needed. This adapter supports public GitHub.com repositories only; it does not use your browser sign-in, Git credential helper, personal access token or model key. Anonymous GitHub rate limits and network policies still apply. A refusal produces a retryable import error and preserves the previous approved snapshot. Private/absent repositories, unsafe URLs and archive limits have separate errors.
 
+An approved GitHub import has a 95-second overall browser deadline to cover its bounded metadata, archive and analysis stages. nginx waits up to 95 seconds without upstream response activity on this endpoint. Other requests keep their normal 15-second browser deadline and proxy read-inactivity limit. These do not remove the server's stricter per-stage network/archive bounds. The controls stay disabled while the import is pending; larger or slow repositories can still fail their server limits.
+
 The default branch is pinned to a commit before its source archive is fetched. The snapshot is static; reimport to obtain a newer commit. Files remain in API memory rather than a checkout. Delete the import or restart the API to clear it. The provenance view identifies the commit but does not claim Git history or a working-tree diff. Local-folder imports retain the existing Git inspection behavior.
 
 ## Supported analysis
