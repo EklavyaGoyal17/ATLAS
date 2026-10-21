@@ -668,7 +668,12 @@ paths:
       operationId: approveRepositoryImport
       description: 'Read-only Git root relative to configured allowlist root; approved
         must be true. No repository commands are executed during indexing. Limits:
-        500 source files, 4 MB total, 160000 bytes/file, 5000 visited entries, depth 18.'
+        500 source files, 4 MB total, 160000 bytes/file, 5000 visited entries, depth 18.
+        One active local worker, no queue. A ten-second processing budget covers draft
+        construction and waiting for the approval audit. Only the waiting request can
+        publish; timeout, interruption or supersession preserves any newer state.
+        Ignored interruption retains worker admission until actual exit. Approval audit
+        records an attempted import, not guaranteed publication.'
       responses:
         '200':
           description: Successful operation
@@ -683,8 +688,13 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
         '429':
-          description: Local request or operation budget exhausted; retry after the
-            indicated interval
+          description: LOCAL_IMPORT_BUSY while a worker remains active, or local request budget exhausted
+        '503':
+          description: LOCAL_IMPORT_TIMEOUT when the processing budget expires, LOCAL_IMPORT_INTERRUPTED without publication, or transient database unavailability
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
       requestBody:
         required: true
         content:
@@ -765,7 +775,7 @@ paths:
             indicated interval
     delete:
       operationId: deleteRepositorySnapshot
-      description: Authenticated local engineering workspace operation
+      description: Clear snapshot/root and advance the revision before recording deletion audit. Pending drafts cannot publish afterward. If the audit response fails, in-memory deletion may already have taken effect; refresh repository state. The audit remains subject to database timeouts.
       responses:
         '200':
           description: Successful operation

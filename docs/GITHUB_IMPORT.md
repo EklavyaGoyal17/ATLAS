@@ -30,6 +30,8 @@ Indexed source: **500 files, 4000000 bytes total, 160000 bytes per file**. Whole
 
 Hidden/generated/credential-named files and unsupported formats are excluded. Oversized, invalid UTF-8 and NUL-containing supported files are omitted with summary findings. Redaction is heuristic; private-key content is withheld and instruction-like content is treated as untrusted data. Review exact excerpts before approving any optional model transmission. Import approval and provider-transmission approval are separate actions.
 
+Approval audit records describe attempts before publication. A draft superseded during its audit is rejected by the final atomic publication check, even if its approval event was recorded. Audit presence does not prove that snapshot became current. Snapshot, approved local root and revision are published together; see [ADR 016](DECISIONS/016-local-import-deadlines-and-publication.md).
+
 ## Relationship to Forge
 
 [Forge](https://github.com/EklavyaGoyal17/Forge) runs reviewed built-in experiments to study correctness and performance. ATLAS imports its source as evidence for code exploration, architecture review and engineering notes. Importing Forge does not start a Forge experiment or merge its runner/database into ATLAS. The projects can be used together while retaining their own execution and data boundaries.

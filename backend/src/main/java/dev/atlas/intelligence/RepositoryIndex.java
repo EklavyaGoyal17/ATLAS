@@ -4,6 +4,7 @@ import com.github.javaparser.*;
 import com.github.javaparser.ast.body.*;
 import com.github.javaparser.ast.expr.*;
 import dev.atlas.platform.ApiException;
+import dev.atlas.platform.RequestContext;
 import dev.atlas.workspace.Documents;
 import java.io.*;
 import java.nio.*;
@@ -11,7 +12,11 @@ import java.nio.charset.*;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.*;
+import java.util.function.*;
+import org.slf4j.MDC;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -160,9 +165,24 @@ public class RepositoryIndex {
     );
     private final Path configuredRoot;
     private final Documents documents;
-    private volatile Snapshot snapshot;
-    private volatile Path approvedRoot;
-    private long revision;
+
+    private record Published(
+        Snapshot snapshot,
+        Path approvedRoot,
+        long revision
+    ) {}
+
+    private record Draft(Snapshot snapshot, Path root) {}
+
+    private final AtomicReference<Published> published = new AtomicReference<>(
+        new Published(null, null, 0)
+    );
+    private final AtomicBoolean localBusy = new AtomicBoolean();
+    private final AtomicReference<FutureTask<Draft>> localWork =
+        new AtomicReference<>();
+    private final LongSupplier nanoTime;
+    private final long localBudgetNanos;
+    private final Consumer<String> localStage;
 
     static boolean supportedPath(String path) {
         if (path == null || path.isEmpty()) return false;
@@ -190,12 +210,12 @@ public class RepositoryIndex {
         );
     }
 
-    synchronized long importRevision() {
-        return revision;
+    long importRevision() {
+        return published.get().revision();
     }
 
     /** Publishes bounded archive text atomically; archive paths never address the filesystem. */
-    synchronized Snapshot indexRemote(
+    Snapshot indexRemote(
         long expectedRevision,
         List<RemoteFile> rawFiles,
         Origin origin
@@ -203,17 +223,14 @@ public class RepositoryIndex {
         return indexRemote(expectedRevision, rawFiles, origin, List.of());
     }
 
-    synchronized Snapshot indexRemote(
+    Snapshot indexRemote(
         long expectedRevision,
         List<RemoteFile> rawFiles,
         Origin origin,
         List<String> importFindings
     ) {
-        if (revision != expectedRevision) throw new ApiException(
-            HttpStatus.CONFLICT,
-            "IMPORT_SUPERSEDED",
-            "The import was superseded by deletion or another repository import."
-        );
+        Published expected = published.get();
+        if (expected.revision() != expectedRevision) throw superseded();
         if (rawFiles.isEmpty() || rawFiles.size() > 500) reject(
             "Remote snapshot must contain 1 to 500 supported files."
         );
@@ -274,10 +291,16 @@ public class RepositoryIndex {
             bytes,
             origin
         );
+        if (published.get() != expected) throw superseded();
+        // Approval is audited before publication; supersession can still occur
+        // during this database call, so the final CAS remains essential.
         documents.audit("REPOSITORY_GITHUB_APPROVED", next.id().toString());
-        approvedRoot = null;
-        revision++;
-        snapshot = next;
+        if (
+            !published.compareAndSet(
+                expected,
+                new Published(next, null, expectedRevision + 1)
+            )
+        ) throw superseded();
         return next;
     }
 
@@ -299,12 +322,32 @@ public class RepositoryIndex {
         );
     }
 
+    @Autowired
     public RepositoryIndex(
         @Value("${atlas.repository-root:..}") String root,
         Documents documents
     ) {
+        this(
+            root,
+            documents,
+            System::nanoTime,
+            TimeUnit.SECONDS.toNanos(10),
+            stage -> {}
+        );
+    }
+
+    RepositoryIndex(
+        String root,
+        Documents documents,
+        LongSupplier nanoTime,
+        long localBudgetNanos,
+        Consumer<String> localStage
+    ) {
         configuredRoot = Path.of(root).toAbsolutePath().normalize();
         this.documents = documents;
+        this.nanoTime = nanoTime;
+        this.localBudgetNanos = localBudgetNanos;
+        this.localStage = localStage;
     }
 
     public Map<String, Object> configuration() {
@@ -318,11 +361,11 @@ public class RepositoryIndex {
             "maxFileBytes",
             160_000,
             "indexed",
-            snapshot != null
+            published.get().snapshot() != null
         );
     }
 
-    public synchronized Snapshot index(String relative, boolean approved) {
+    public Snapshot index(String relative, boolean approved) {
         if (!approved) reject(
             "Explicit read-only import approval is required."
         );
@@ -334,6 +377,139 @@ public class RepositoryIndex {
             relative.startsWith("/") ||
             Arrays.asList(relative.split("/")).contains("..")
         ) reject("Use a relative path inside the configured workspace.");
+        // Resolve fallible request context before admission so an invalid MDC
+        // value cannot strand the only worker slot.
+        String correlation = RequestContext.correlationId().toString();
+        long started = nanoTime.getAsLong();
+        if (!localBusy.compareAndSet(false, true)) throw new ApiException(
+            HttpStatus.TOO_MANY_REQUESTS,
+            "LOCAL_IMPORT_BUSY",
+            "A local import worker is still active. Wait for it to finish before importing again."
+        );
+        Published expected = published.get();
+        var exited = new CountDownLatch(1);
+        var work = new FutureTask<Draft>(() -> {
+            MDC.put("correlationId", correlation);
+            try {
+                checkpoint("scan", started);
+                if (published.get() != expected) throw superseded();
+                Draft draft = localDraft(relative, started);
+                checkpoint("audit", started);
+                if (published.get() != expected) throw superseded();
+                // This records approval of an attempted import, not publication.
+                documents.audit(
+                    "REPOSITORY_APPROVED",
+                    draft.snapshot().id().toString()
+                );
+                checkpoint("complete", started);
+                return draft;
+            } finally {
+                MDC.clear();
+            }
+        });
+        localWork.set(work);
+        boolean launched = false;
+        try {
+            Thread.ofPlatform()
+                .daemon(true)
+                .name("atlas-local-import")
+                .start(() -> {
+                    try {
+                        work.run();
+                    } finally {
+                        localWork.compareAndSet(work, null);
+                        localBusy.set(false);
+                        exited.countDown();
+                        localStage.accept("worker-exit");
+                    }
+                });
+            launched = true;
+            long remaining =
+                localBudgetNanos - (nanoTime.getAsLong() - started);
+            if (remaining <= 0) throw localTimeout();
+            Draft draft = work.get(remaining, TimeUnit.NANOSECONDS);
+            remaining = localBudgetNanos - (nanoTime.getAsLong() - started);
+            if (
+                remaining <= 0 || !exited.await(remaining, TimeUnit.NANOSECONDS)
+            ) throw localTimeout();
+            checkpoint("publish", started);
+            if (
+                !published.compareAndSet(
+                    expected,
+                    new Published(
+                        draft.snapshot(),
+                        draft.root(),
+                        expected.revision() + 1
+                    )
+                )
+            ) throw superseded();
+            return draft.snapshot();
+        } catch (TimeoutException e) {
+            throw localTimeout();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new ApiException(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "LOCAL_IMPORT_INTERRUPTED",
+                "The local import request was interrupted; no snapshot was published."
+            );
+        } catch (CancellationException e) {
+            if (published.get() != expected) throw superseded();
+            throw localTimeout();
+        } catch (ExecutionException e) {
+            long remaining =
+                localBudgetNanos - (nanoTime.getAsLong() - started);
+            if (remaining > 0) {
+                try {
+                    exited.await(remaining, TimeUnit.NANOSECONDS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            if (e.getCause() instanceof RuntimeException failure) throw failure;
+            if (e.getCause() instanceof Error failure) throw failure;
+            throw new IllegalStateException(
+                "Local import worker failed.",
+                e.getCause()
+            );
+        } finally {
+            // Future cancellation does not imply worker termination. Admission is
+            // released only by the actual worker's finally, including ignored interrupts.
+            work.cancel(true);
+            if (!launched) {
+                localWork.compareAndSet(work, null);
+                localBusy.set(false);
+            }
+        }
+    }
+
+    private void checkpoint(String stage, long started) {
+        localStage.accept(stage);
+        if (
+            Thread.currentThread().isInterrupted() ||
+            nanoTime.getAsLong() - started >= localBudgetNanos
+        ) throw localTimeout();
+    }
+
+    private static ApiException localTimeout() {
+        return new ApiException(
+            // The request body was received completely. HTTP 408 describes an
+            // incomplete request and clients can automatically resend it.
+            HttpStatus.SERVICE_UNAVAILABLE,
+            "LOCAL_IMPORT_TIMEOUT",
+            "Local import exceeded its 10-second processing budget. No snapshot was published; choose a smaller repository."
+        );
+    }
+
+    private static ApiException superseded() {
+        return new ApiException(
+            HttpStatus.CONFLICT,
+            "IMPORT_SUPERSEDED",
+            "The import was superseded by deletion or another repository import."
+        );
+    }
+
+    private Draft localDraft(String relative, long started) {
         try {
             Path base = configuredRoot.toRealPath();
             Path root = base.resolve(relative).normalize();
@@ -363,6 +539,7 @@ public class RepositoryIndex {
                         Path dir,
                         BasicFileAttributes attrs
                     ) {
+                        checkpoint("directory", started);
                         if (++visited[0] > 5000) reject(
                             "Repository traversal exceeds 5000 entries."
                         );
@@ -383,6 +560,7 @@ public class RepositoryIndex {
                         Path path,
                         BasicFileAttributes attrs
                     ) throws IOException {
+                        checkpoint("file", started);
                         if (++visited[0] > 5000) reject(
                             "Repository traversal exceeds 5000 entries."
                         );
@@ -432,7 +610,9 @@ public class RepositoryIndex {
                             while (
                                 buffer.hasRemaining() &&
                                 channel.read(buffer) > 0
-                            ) {}
+                            ) {
+                                checkpoint("read", started);
+                            }
                         }
                         if (buffer.position() > 160000) reject(
                             "File changed beyond the size limit during import."
@@ -480,6 +660,7 @@ public class RepositoryIndex {
                             edges,
                             findings
                         );
+                        checkpoint("parsed", started);
                         if (safe.split("\\R", -1).length > 500) findings.add(
                             relativePath +
                                 ": large file; consider responsibility boundaries (heuristic)."
@@ -488,6 +669,7 @@ public class RepositoryIndex {
                     }
                 }
             );
+            checkpoint("calls", started);
             files.sort(Comparator.comparing(Source::path));
             Map<String, Long> languages = new TreeMap<>();
             files.forEach(f -> languages.merge(f.language(), 1L, Long::sum));
@@ -507,11 +689,8 @@ public class RepositoryIndex {
                 languages,
                 bytes[0]
             );
-            documents.audit("REPOSITORY_APPROVED", next.id().toString());
-            approvedRoot = root;
-            revision++;
-            snapshot = next;
-            return next;
+            checkpoint("draft", started);
+            return new Draft(next, root);
         } catch (IOException e) {
             throw new ApiException(
                 HttpStatus.BAD_REQUEST,
@@ -794,7 +973,11 @@ public class RepositoryIndex {
     }
 
     public Snapshot current() {
-        Snapshot s = snapshot;
+        return requireSnapshot(published.get());
+    }
+
+    private static Snapshot requireSnapshot(Published state) {
+        Snapshot s = state.snapshot();
         if (s == null) throw new ApiException(
             HttpStatus.CONFLICT,
             "NO_INDEX",
@@ -818,15 +1001,19 @@ public class RepositoryIndex {
             );
     }
 
-    public synchronized void clear() {
-        snapshot = null;
-        approvedRoot = null;
-        revision++;
+    public void clear() {
+        // Capture first: a job admitted after deletion must not be cancelled.
+        var work = localWork.get();
+        published.updateAndGet(state ->
+            new Published(null, null, state.revision() + 1)
+        );
+        if (work != null) work.cancel(true);
         documents.audit("REPOSITORY_DELETED", "local-index");
     }
 
     public Map<String, String> git(String path) {
-        var current = current();
+        Published state = published.get();
+        var current = requireSnapshot(state);
         if (
             current
                 .files()
@@ -845,7 +1032,7 @@ public class RepositoryIndex {
             "changes",
             "This is an immutable source archive; no local working-tree diff is available."
         );
-        Path root = approvedRoot;
+        Path root = state.approvedRoot();
         if (root == null) reject("No approved repository.");
         return Map.of(
             "history",
@@ -876,7 +1063,7 @@ public class RepositoryIndex {
         );
     }
 
-    private String gitCommand(Path root, List<String> args) {
+    String gitCommand(Path root, List<String> args) {
         // Fixed Git builtin only, no shell, no hooks, no pager, no external diff or text conversion.
         var command = new ArrayList<>(
             List.of(
