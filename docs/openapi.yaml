@@ -669,7 +669,7 @@ paths:
       description: 'Read-only Git root relative to configured allowlist root; approved
         must be true. No repository commands are executed during indexing. Limits:
         500 source files, 4 MB total, 160000 bytes/file, 5000 visited entries, depth 18.
-        One active local worker, no queue. A ten-second processing budget covers draft
+        One active local worker, no queue. A twelve-second processing budget covers draft
         construction and waiting for the approval audit. Only the waiting request can
         publish; timeout, interruption or supersession preserves any newer state.
         Ignored interruption retains worker admission until actual exit. Approval audit
@@ -930,16 +930,41 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/Ask'
+  /api/assistant/incidents/{id}/summary:
+    get:
+      operationId: summarizeSavedIncident
+      description: Deterministic no-model summary of saved synthetic investigation samples and retained spans. Does not retrieve journal/postmortem text, quote hypotheses as facts, execute commands or call providers. Citations are bounded; legacy unavailable evidence is explicit. Deletion removes availability.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Calculated measurements, bounded trace/span citations and evidence limits
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IncidentSummary'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          description: Local request budget exhausted
   /api/observability/metrics:
     get:
       operationId: measuredMetrics
-      description: Authenticated local engineering workspace operation
+      description: Global JVM-lifetime counters with retained global latency samples, plus fixed operation/family measurements. At most 92 operation labels retain 100 completed latency samples each; start-time windows and lifetime counters are separate. Raw paths, IDs, queries and bodies are not labels. Payment authorization/detail/capture/refund/reversal are distinct; other operations use families.
       responses:
         '200':
           description: Successful operation
           content:
             application/json:
-              schema: *id002
+              schema:
+                $ref: '#/components/schemas/HttpMetrics'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1262,6 +1287,93 @@ components:
         maxLength: 100
         pattern: ^[A-Za-z0-9._:-]+$
   schemas:
+    IncidentMeasurements:
+      type: object
+      required: [samples, measuredSamples, failedSamples, medianMs]
+      properties:
+        samples: {type: integer, minimum: 0, maximum: 128}
+        measuredSamples: {type: integer, minimum: 0, maximum: 128}
+        failedSamples: {type: integer, minimum: 0, maximum: 128}
+        medianMs: {type: [number, 'null'], minimum: 0}
+    IncidentSummary:
+      type: object
+      required: [id, mode, evidenceAvailable, scenario, baseline, affected, affectedMinusBaselineMs, retainedSpans, errorSpans, slowestChild, findings, limitations]
+      properties:
+        id: {type: string, format: uuid}
+        mode: {type: string, const: DETERMINISTIC_SAVED_EVIDENCE}
+        evidenceAvailable: {type: boolean}
+        scenario: {type: [string, 'null']}
+        baseline: {$ref: '#/components/schemas/IncidentMeasurements'}
+        affected: {$ref: '#/components/schemas/IncidentMeasurements'}
+        affectedMinusBaselineMs: {type: [number, 'null']}
+        retainedSpans: {type: integer, minimum: 0, maximum: 128}
+        errorSpans: {type: integer, minimum: 0, maximum: 128}
+        slowestChild:
+          type: [object, 'null']
+          properties:
+            traceId: {type: string, pattern: '^[0-9a-f]{32}$'}
+            spanId: {type: string, pattern: '^[0-9a-f]{16}$'}
+            parentId: {type: string, pattern: '^[0-9a-f]{16}$'}
+            name: {type: string}
+            durationMs: {type: number, minimum: 0}
+            status: {type: string, enum: [ERROR, NON_ERROR]}
+        findings:
+          type: array
+          maxItems: 5
+          items:
+            type: object
+            required: [kind, text, citations]
+            properties:
+              kind: {type: string}
+              text: {type: string}
+              citations:
+                type: array
+                maxItems: 3
+                items:
+                  type: object
+                  required: [traceId, spanId, label]
+                  properties:
+                    traceId: {type: string, pattern: '^[0-9a-f]{32}$'}
+                    spanId: {type: [string, 'null'], pattern: '^[0-9a-f]{16}$'}
+                    label: {type: string}
+        limitations:
+          type: array
+          items: {type: string}
+    HttpMetrics:
+      type: object
+      required: [since, requests, latencySamples, errorRate, p50Ms, p95Ms, p99Ms, endpointLimits, endpointScope, endpoints]
+      properties:
+        since: {type: string, format: date-time}
+        requests: {type: integer, minimum: 0}
+        latencySamples: {type: integer, minimum: 0, maximum: 500}
+        errorRate: {type: number, minimum: 0, maximum: 1}
+        p50Ms: {type: number}
+        p95Ms: {type: number}
+        p99Ms: {type: number}
+        endpointScope: {type: string}
+        endpointLimits:
+          type: object
+          properties:
+            operations: {type: integer, const: 92}
+            samplesPerOperation: {type: integer, const: 100}
+            totalSamples: {type: integer, const: 9200}
+        endpoints:
+          type: array
+          maxItems: 92
+          items:
+            type: object
+            required: [operation, requests, errors, errorRate, latencySamples, p50Ms, p95Ms, p99Ms, windowStart, windowEnd]
+            properties:
+              operation: {type: string}
+              requests: {type: integer, minimum: 0}
+              errors: {type: integer, minimum: 0}
+              errorRate: {type: number, minimum: 0, maximum: 1}
+              latencySamples: {type: integer, minimum: 1, maximum: 100}
+              p50Ms: {type: number}
+              p95Ms: {type: number}
+              p99Ms: {type: number}
+              windowStart: {type: string, format: date-time}
+              windowEnd: {type: string, format: date-time}
     DeliveryFault:
       type: string
       enum:
@@ -1496,7 +1608,7 @@ components:
         body:
           type: object
           description: UTF-8 JSON at most 12000 bytes. DIAGRAM requires validated
-            nodes, edges and assumptions; at most 24 components and 48 edges.
+            nodes, edges and assumptions; at most 24 components and 48 edges. ADR writes require Context, Decision, Alternatives, Tradeoffs, Consequences and Review date as nonblank strings of at most 1200 characters each; Review date is a real yyyy-MM-dd calendar date in years 0001–9999. Existing incomplete ADRs remain readable; updates must complete required fields. Additional bounded legacy fields remain allowed.
       required:
       - kind
       - title
@@ -2018,7 +2130,7 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
     NotFound:
-      description: Requested payment or outbox event does not exist.
+      description: Requested resource does not exist or its saved investigation was deleted.
       content:
         application/json:
           schema:

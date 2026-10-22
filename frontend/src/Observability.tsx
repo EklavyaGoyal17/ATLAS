@@ -4,6 +4,8 @@ import { Activity, Clock3, Database } from "lucide-react";
 import { api, timestamp } from "./api";
 import { Notice, Stat } from "./ui";
 import { useDocuments, download } from "./workspace";
+import { EndpointMetrics, type HttpEndpointMetrics } from "./EndpointMetrics";
+import { IncidentBrief } from "./IncidentBrief";
 type Span = {
   traceId: string;
   spanId: string;
@@ -31,6 +33,13 @@ type Evidence = {
   spans: Span[];
   truncated: boolean;
   scope: string;
+};
+type Metrics = HttpEndpointMetrics & {
+  since: string;
+  scope: string;
+  p95Ms: number;
+  requestsPerSecond: number;
+  errorRate: number;
 };
 const scenarios = [
   "SLOW_QUERY",
@@ -63,8 +72,7 @@ export function Observability({ token }: { token: string }) {
   const currentIncident = evidence.data?.investigation ?? incident;
   const metrics = useQuery({
     queryKey: ["metrics"],
-    queryFn: () =>
-      api<Record<string, string | number>>(token, "/observability/metrics"),
+    queryFn: () => api<Metrics>(token, "/observability/metrics"),
     refetchInterval: 3000,
   });
   const spans = useQuery({
@@ -158,6 +166,14 @@ export function Observability({ token }: { token: string }) {
         . Live telemetry resets on restart. Saved investigations and their
         bounded span evidence persist in PostgreSQL.
       </p>
+      {metrics.data && (
+        <>
+          <p className="muted">
+            HTTP counter lifetime starts {timestamp(metrics.data.since)}.
+          </p>
+          <EndpointMetrics {...metrics.data} />
+        </>
+      )}
       <section className="panel padded">
         <div className="panel-heading">
           <div>
@@ -330,6 +346,17 @@ export function Observability({ token }: { token: string }) {
           </div>
         )}
       </section>
+      {currentIncident && (
+        <IncidentBrief
+          key={currentIncident.id}
+          token={token}
+          id={currentIncident.id}
+          onTrace={(traceId) => {
+            setSource("saved");
+            setTrace(traceId);
+          }}
+        />
+      )}
       <section className="panel padded">
         <h2>Trace explorer</h2>
         <div className="button-row">

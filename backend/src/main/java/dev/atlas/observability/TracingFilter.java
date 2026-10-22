@@ -30,25 +30,8 @@ public class TracingFilter extends OncePerRequestFilter {
         HttpServletResponse res,
         FilterChain chain
     ) throws ServletException, IOException {
-        // Static route families only: never record user paths, queries, bodies or credentials.
-        String family = java.util.Set.of(
-            "payments",
-            "events",
-            "worker",
-            "experiments",
-            "ledger",
-            "workspace",
-            "repository",
-            "assistant",
-            "simulations",
-            "webhooks"
-        )
-            .stream()
-            .filter(x -> req.getRequestURI().startsWith("/api/" + x))
-            .findFirst()
-            .orElse("other");
         var span = telemetry.incoming(
-            "HTTP " + req.getMethod() + " /api/" + family,
+            HttpOperations.label(req.getMethod(), req.getRequestURI()),
             req
         );
         res.setHeader("X-Trace-ID", span.getSpanContext().getTraceId());

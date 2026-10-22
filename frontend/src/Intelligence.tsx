@@ -234,7 +234,10 @@ export function Intelligence({
   const configuration = useQuery({
     queryKey: ["repo-config"],
     queryFn: () =>
-      api<{ indexed: boolean }>(token, "/repository/configuration"),
+      api<{ indexed: boolean; localImportBudgetMs?: number }>(
+        token,
+        "/repository/configuration",
+      ),
   });
   const snapshot = useQuery({
     queryKey: ["repository"],
@@ -467,6 +470,14 @@ export function Intelligence({
               Read-only snapshot of the configured workspace. Files stay local
               unless you separately approve a provider request below.
             </p>
+            {typeof configuration.data?.localImportBudgetMs === "number" && (
+              <p className="muted">
+                Processing budget:{" "}
+                {configuration.data.localImportBudgetMs / 1000} seconds. Slow
+                checkouts can reach this limit before the file/size caps; choose
+                a smaller repository if that happens.
+              </p>
+            )}
             <div className="form-row">
               <label>
                 Repository path relative to configured root

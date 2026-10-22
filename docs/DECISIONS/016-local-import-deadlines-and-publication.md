@@ -1,6 +1,6 @@
 # ADR 016: Bound local import waiting and publish one consistent snapshot
 
-Status: accepted, 21 October 2026.
+Status: accepted, 21 October 2026; local budget calibrated on 22 October 2026.
 
 ## Context
 
@@ -10,7 +10,7 @@ File/count limits cannot bound filesystem latency or parser and database waits. 
 
 Keep the approved snapshot, local root and revision in one immutable atomic state. Local and GitHub imports construct drafts and record approval attempts outside publication locks. Only compare-and-set against the captured state can publish a replacement. Deletion immediately advances the revision and clears both snapshot and root, invalidating older drafts. Git inspection captures the same snapshot/root pair for both fixed commands.
 
-Admit one local worker with no queue. The production ten-second processing budget includes draft construction and waiting for its approval audit. The request waits on the worker with the remaining budget and alone performs final publication after checking time and revision again. Timeout returns `503 LOCAL_IMPORT_TIMEOUT`; interruption returns `503 LOCAL_IMPORT_INTERRUPTED`; competing publication or deletion returns `409 IMPORT_SUPERSEDED`. A second local import while a worker remains active returns `429 LOCAL_IMPORT_BUSY`.
+Admit one local worker with no queue. The production twelve-second processing budget includes draft construction and waiting for its approval audit. The request waits on the worker with the remaining budget and alone performs final publication after checking time and revision again. Timeout returns `503 LOCAL_IMPORT_TIMEOUT`; interruption returns `503 LOCAL_IMPORT_INTERRUPTED`; competing publication or deletion returns `409 IMPORT_SUPERSEDED`. A second local import while a worker remains active returns `429 LOCAL_IMPORT_BUSY`. Configuration reports the active budget in milliseconds and the local-import UI displays it.
 
 Cancellation interrupts the worker but does not release admission until that worker actually exits. This prevents repeated requests from accumulating workers when an operating-system, parser or JDBC operation ignores interruption. Reads and in-memory deletion need no worker monitor. HTTP 408 is reserved for an incomplete request message and can trigger automatic browser resending on reused connections. The completed import request instead reports its processing deadline through 503; see [RFC 9110 section 15.5.9](https://www.rfc-editor.org/rfc/rfc9110.html#section-15.5.9) and [Chromium HTTP transaction handling](https://chromium.googlesource.com/chromium/src/+/HEAD/net/http/http_network_transaction.cc). The worker propagates the request correlation ID into its audit context and clears it on exit.
 
@@ -23,3 +23,7 @@ Increasing every browser timeout leaves late publication and monitor contention 
 ## Consequences
 
 Slow local work cannot publish from an abandoned worker or hold a publication monitor needed by readers. A hung worker can keep subsequent local imports busy until it returns; operators can restart the local API when necessary. JVM pauses and operating-system scheduling prevent a hard real-time response guarantee. This change does not add a CPU deadline to remote archive AST analysis, cancel an operation merely because its HTTP client disconnected, or promise forceful termination of blocking work.
+
+## Calibration evidence, 22 October
+
+The original ten-second setting rejected a fresh local ATLAS import in the 61/62 Windows browser attempt: API time 10,014 ms, observed client time 10,022.6 ms, one 503 response and no automatic resend. The preserved trace proves the budget expired, not which filesystem/parser stage caused the delay. Only the local processing budget was adjusted to twelve seconds; ordinary browser/nginx deadlines remain fifteen seconds and GitHub remains ninety-five seconds. Fresh JVMs with existing host filesystem caches then imported 156 files successfully in 8,893 and 8,087 ms; a separate warm comparison took 7,747 ms. Each labelled attempt made one request, with no retries. These observations provide headroom for this checkout, not a universal cold-disk or performance guarantee. Worker admission, cancellation and final publication fencing remain unchanged.

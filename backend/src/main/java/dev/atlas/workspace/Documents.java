@@ -102,6 +102,7 @@ public class Documents {
         if (request.kind() == Kind.DIAGRAM) DiagramRules.validate(
             request.body()
         );
+        if (request.kind() == Kind.ADR) AdrRules.validate(request.body());
         // One lock bounds document creation and makes optimistic version checks atomic.
         jdbc.execute("SELECT pg_advisory_xact_lock(818103)");
         int version = request.expectedVersion() + 1;

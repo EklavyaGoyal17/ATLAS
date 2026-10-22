@@ -331,7 +331,7 @@ public class RepositoryIndex {
             root,
             documents,
             System::nanoTime,
-            TimeUnit.SECONDS.toNanos(10),
+            TimeUnit.SECONDS.toNanos(12),
             stage -> {}
         );
     }
@@ -360,6 +360,8 @@ public class RepositoryIndex {
             4_000_000,
             "maxFileBytes",
             160_000,
+            "localImportBudgetMs",
+            TimeUnit.NANOSECONDS.toMillis(localBudgetNanos),
             "indexed",
             published.get().snapshot() != null
         );
@@ -491,13 +493,15 @@ public class RepositoryIndex {
         ) throw localTimeout();
     }
 
-    private static ApiException localTimeout() {
+    private ApiException localTimeout() {
         return new ApiException(
             // The request body was received completely. HTTP 408 describes an
             // incomplete request and clients can automatically resend it.
             HttpStatus.SERVICE_UNAVAILABLE,
             "LOCAL_IMPORT_TIMEOUT",
-            "Local import exceeded its 10-second processing budget. No snapshot was published; choose a smaller repository."
+            "Local import exceeded its " +
+                TimeUnit.NANOSECONDS.toMillis(localBudgetNanos) +
+                " ms processing budget. No snapshot was published; choose a smaller repository."
         );
     }
 

@@ -91,6 +91,15 @@ class RepositoryLocalLifecycleTest {
     }
 
     @Test
+    void productionBudgetLeavesHeadroomInsideOrdinaryTransportDeadline() {
+        var index = new RepositoryIndex(root.toString(), documents);
+        assertThat(index.configuration().get("localImportBudgetMs")).isEqualTo(
+            12000L
+        );
+        verifyNoInteractions(documents);
+    }
+
+    @Test
     void approvalAndPathValidationDoNotStartWorkOrAudit() {
         var stages = new ArrayList<String>();
         var index = index(new AtomicLong(), stages::add);

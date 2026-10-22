@@ -57,6 +57,10 @@ const investigation = await api("/observability/incidents", "POST", {
 });
 const evidencePath = `/observability/incidents/${investigation.id}/evidence`;
 const evidenceBefore = await api(evidencePath);
+const summaryPath = `/assistant/incidents/${investigation.id}/summary`;
+const summaryBefore = await api(summaryPath);
+assert.equal(summaryBefore.evidenceAvailable, true);
+assert.equal(summaryBefore.id, investigation.id);
 assert.equal(evidenceBefore.available, true);
 assert.ok(evidenceBefore.spans.some((span) => span.name === "db.query"));
 console.log(
@@ -103,6 +107,11 @@ assert.deepEqual(
   evidenceBefore,
   "Saved investigation spans changed across restart",
 );
+assert.deepEqual(
+  await api(summaryPath),
+  summaryBefore,
+  "Deterministic incident summary changed across restart",
+);
 const persisted = await api(`/events/${id}`);
 assert.equal(persisted.event.effects, 1);
 assert.equal(persisted.event.status, "PROCESSING");
@@ -129,6 +138,7 @@ console.log(
       engineeringRecordPersisted: true,
       repositorySnapshotCleared: true,
       incidentEvidencePersisted: true,
+      incidentSummaryPersisted: true,
       note: "Actual API container/JVM restart; injected interruption at commit-before-ack, not an OS power-loss test.",
     },
     null,

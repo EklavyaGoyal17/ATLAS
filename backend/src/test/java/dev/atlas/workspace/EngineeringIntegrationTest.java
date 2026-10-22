@@ -95,7 +95,7 @@ class EngineeringIntegrationTest {
             Documents.Kind.ADR,
             "Decision",
             json.readTree(
-                "{\"Context\":\"Synthetic architecture\",\"Decision\":\"Use a monolith\"}"
+                "{\"Context\":\"Synthetic architecture\",\"Decision\":\"Use a monolith\",\"Alternatives\":\"Separate services\",\"Tradeoffs\":\"One deployment boundary\",\"Consequences\":\"Shared database\",\"Review date\":\"2026-12-01\"}"
             ),
             0
         );
@@ -135,6 +135,94 @@ class EngineeringIntegrationTest {
                 Long.class
             )
         ).isEqualTo(1);
+    }
+
+    @Test
+    void incidentCopilotSummarizesSavedEvidenceWithAuthenticationAndDeletion()
+        throws Exception {
+        var investigation = incidents.run(IncidentService.Scenario.SLOW_QUERY);
+        String path = "/assistant/incidents/" + investigation.id() + "/summary";
+        var unauthenticated = client.send(
+            HttpRequest.newBuilder(
+                URI.create("http://127.0.0.1:" + port + "/api" + path)
+            )
+                .GET()
+                .build(),
+            HttpResponse.BodyHandlers.ofString()
+        );
+        assertThat(unauthenticated.statusCode()).isEqualTo(401);
+        var response = request("GET", path, "");
+        assertThat(response.statusCode()).isEqualTo(200);
+        var summary = json.readTree(response.body());
+        assertThat(summary.get("id").asString()).isEqualTo(
+            investigation.id().toString()
+        );
+        assertThat(summary.get("mode").asString()).isEqualTo(
+            "DETERMINISTIC_SAVED_EVIDENCE"
+        );
+        assertThat(summary.get("baseline").get("samples").asInt()).isEqualTo(3);
+        assertThat(summary.get("affected").get("samples").asInt()).isEqualTo(3);
+        assertThat(summary.get("retainedSpans").asInt()).isEqualTo(
+            archive.get(investigation.id()).spans().size()
+        );
+        assertThat(
+            summary.get("slowestChild").get("name").asString()
+        ).isEqualTo("db.query");
+        assertThat(response.body()).doesNotContain(investigation.hypothesis());
+        request("DELETE", "/workspace/documents/" + investigation.id(), "");
+        assertThat(request("GET", path, "").statusCode()).isEqualTo(404);
+        assertThat(
+            request(
+                "GET",
+                "/assistant/incidents/not-a-uuid/summary",
+                ""
+            ).statusCode()
+        ).isEqualTo(400);
+    }
+
+    @Test
+    void incompleteLegacyAdrsRemainReadableButNewWritesMustBeComplete()
+        throws Exception {
+        UUID id = UUID.randomUUID();
+        jdbc.update(
+            "INSERT INTO workspace_document(id,kind,title,version,body_json) VALUES(?,'ADR','Legacy decision',1,'{}'::jsonb)",
+            id
+        );
+        assertThat(documents.list(0, Documents.Kind.ADR))
+            .singleElement()
+            .satisfies(doc -> {
+                assertThat(doc.id()).isEqualTo(id);
+                assertThat(doc.body().size()).isZero();
+            });
+        for (String body : List.of("{}", "{\"Context\":\"Only one field\"}")) {
+            var response = request(
+                "PUT",
+                "/workspace/documents/" + id,
+                json.writeValueAsString(
+                    new Documents.Write(
+                        Documents.Kind.ADR,
+                        "Incomplete edit",
+                        json.readTree(body),
+                        1
+                    )
+                )
+            );
+            assertThat(response.statusCode()).isEqualTo(400);
+            assertThat(
+                json.readTree(response.body()).get("code").asString()
+            ).isEqualTo("INVALID_ADR");
+        }
+        var preserved = documents.list(0, Documents.Kind.ADR).getFirst();
+        assertThat(preserved.title()).isEqualTo("Legacy decision");
+        assertThat(preserved.version()).isEqualTo(1);
+        assertThat(preserved.body().size()).isZero();
+        assertThat(documents.revisions(id)).isEmpty();
+        assertThat(
+            jdbc.queryForObject(
+                "SELECT count(*) FROM workspace_audit",
+                Long.class
+            )
+        ).isZero();
     }
 
     @Test
