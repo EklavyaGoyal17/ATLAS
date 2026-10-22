@@ -2,11 +2,49 @@ import { useState } from "react";
 import { Notice } from "./ui";
 import { timestamp } from "./api";
 import { useDocuments, download, type Document } from "./workspace";
+// These are reviewed public ATLAS examples, independent of imported snapshots.
+// No URL is derived from a repository import, journal record, or user answer.
+const publicAtlas = "https://github.com/EklavyaGoyal17/ATLAS/blob/main/";
+const walkthroughs = {
+  payments: {
+    path: "docs/DEMO.md#runnable-payment-lifecycle-and-idempotency-under-pressure",
+    title: "Payment lifecycle and idempotency",
+  },
+  rollback: {
+    path: "docs/DEMO.md#runnable-atomic-rollback-and-state-recovery",
+    title: "Atomic rollback and state recovery",
+  },
+  delivery: {
+    path: "docs/DEMO.md#runnable-worker-interruption-and-durable-recovery",
+    title: "Worker interruption and durable recovery",
+  },
+  design: {
+    path: "docs/ARCHITECTURE.md#trust-and-transaction-boundaries",
+    title: "Trust and transaction boundaries",
+  },
+  incidents: {
+    path: "docs/DEMO.md#demo-3--measured-incident-investigation",
+    title: "Measured incident investigation",
+  },
+  source: {
+    path: "docs/DEMO.md#demo-4--understand-the-atlas-codebase",
+    title: "Approved codebase investigation",
+  },
+  backups: {
+    path: "docs/RECOVERY.md#application-created-backup-and-restored-api-readback",
+    title: "Isolated application backup and readback",
+  },
+  assistant: {
+    path: "docs/DEMO.md#demo-5--grounded-technical-review",
+    title: "Grounded technical review",
+  },
+};
 const curriculum = [
   {
     area: "Java",
     concept: "Represent money with integer minor units and explicit currency.",
     source: "backend/src/main/java/dev/atlas/payments/PaymentModels.java",
+    walkthrough: walkthroughs.payments,
     exercise: "Add a currency safely; explain rounding at the boundary.",
     question:
       "Why must money avoid binary floating-point, and where is currency enforced?",
@@ -16,6 +54,7 @@ const curriculum = [
     area: "Spring Boot",
     concept: "Transaction proxies wrap public service boundaries.",
     source: "backend/src/main/java/dev/atlas/payments/PaymentService.java",
+    walkthrough: walkthroughs.rollback,
     exercise:
       "Explain why calling a transactional method on this bypasses a proxy.",
     question:
@@ -26,6 +65,7 @@ const curriculum = [
     area: "SQL",
     concept: "Constraints complement application validation.",
     source: "backend/src/main/resources/db/migration/V1__payment_core.sql",
+    walkthrough: walkthroughs.rollback,
     exercise:
       "Design an additive migration and a backfill without blocking writes.",
     question: "How would you migrate a large payment table without downtime?",
@@ -35,6 +75,7 @@ const curriculum = [
     area: "Concurrency",
     concept: "Key locks and payment row locks serialize different invariants.",
     source: "backend/src/main/java/dev/atlas/payments/PaymentStore.java",
+    walkthrough: walkthroughs.payments,
     exercise:
       "Run the concurrent capture integration test and explain its linearization point.",
     question:
@@ -45,6 +86,7 @@ const curriculum = [
     area: "Networking",
     concept: "A timeout can leave the business outcome unknown.",
     source: "scripts/load.mjs",
+    walkthrough: walkthroughs.delivery,
     exercise: "Drop a response after commit, then retry the original key.",
     question:
       "How can a caller recover when the response is lost after a successful database commit?",
@@ -54,6 +96,7 @@ const curriculum = [
     area: "APIs",
     concept: "A repeated key must describe the same canonical intent.",
     source: "backend/src/main/java/dev/atlas/payments/PaymentService.java",
+    walkthrough: walkthroughs.payments,
     exercise: "Change the amount while keeping the original idempotency key.",
     question:
       "How do you guarantee the same payment request is not processed twice?",
@@ -64,6 +107,7 @@ const curriculum = [
     concept:
       "Outbox publication and consumer inbox address separate atomicity gaps.",
     source: "backend/src/main/java/dev/atlas/eventing/DeliveryService.java",
+    walkthrough: walkthroughs.delivery,
     exercise:
       "Crash after commit, advance the lease, and verify one notification.",
     question:
@@ -75,6 +119,7 @@ const curriculum = [
     concept:
       "A modular monolith preserves local transactions and limits operating cost.",
     source: "docs/DECISIONS/001-modular-monolith.md",
+    walkthrough: walkthroughs.design,
     exercise:
       "Design the consistency boundary if the ledger becomes a separate service.",
     question:
@@ -86,6 +131,7 @@ const curriculum = [
     concept: "Concurrent and rollback tests check observable invariants.",
     source:
       "backend/src/test/java/dev/atlas/payments/PaymentIntegrationTest.java",
+    walkthrough: walkthroughs.rollback,
     exercise: "Propose a race that would pass sequential unit tests.",
     question: "Which test would detect a refund race that unit tests miss?",
     rubric: ["concurrent", "remaining", "balance"],
@@ -94,6 +140,7 @@ const curriculum = [
     area: "Debugging",
     concept: "Use correlation and trace IDs to connect observations.",
     source: "backend/src/main/java/dev/atlas/observability/Telemetry.java",
+    walkthrough: walkthroughs.incidents,
     exercise:
       "Compare baseline and injected database latency and inspect child spans.",
     question:
@@ -105,6 +152,7 @@ const curriculum = [
     concept:
       "Imported source is untrusted data and must stay inside an approved root.",
     source: "backend/src/main/java/dev/atlas/intelligence/RepositoryIndex.java",
+    walkthrough: walkthroughs.source,
     exercise: "Try a traversal path and inspect the import security tests.",
     question:
       "How do you prevent a repository from executing instructions or exposing secrets?",
@@ -114,6 +162,7 @@ const curriculum = [
     area: "Cloud infrastructure",
     concept: "One database is an explicit availability boundary.",
     source: "compose.yaml",
+    walkthrough: walkthroughs.backups,
     exercise:
       "Write a backup and restore procedure; test it only on a disposable database.",
     question:
@@ -125,6 +174,7 @@ const curriculum = [
     concept: "Percentiles require a known observation window and sample scope.",
     source:
       "backend/src/main/java/dev/atlas/observability/IncidentService.java",
+    walkthrough: walkthroughs.incidents,
     exercise: "Run lock contention, compare traces, and write a postmortem.",
     question:
       "Why is the displayed p95 insufficient to claim a production SLO?",
@@ -135,6 +185,7 @@ const curriculum = [
     concept: "Citation validation proves existence, not semantic correctness.",
     source:
       "backend/src/main/java/dev/atlas/intelligence/AssistantService.java",
+    walkthrough: walkthroughs.assistant,
     exercise:
       "Review the prompt-injection and outage tests before enabling a provider.",
     question:
@@ -142,6 +193,35 @@ const curriculum = [
     rubric: ["source", "test", "uncertainty"],
   },
 ];
+function PublicLearningEvidence({
+  item,
+}: {
+  item: (typeof curriculum)[number];
+}) {
+  return (
+    <>
+      <p>
+        Public ATLAS implementation:{" "}
+        <a
+          href={`${publicAtlas}${item.source}`}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <code>{item.source}</code>
+        </a>
+      </p>
+      <p>
+        <a
+          href={`${publicAtlas}${item.walkthrough.path}`}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Open walkthrough: {item.walkthrough.title}
+        </a>
+      </p>
+    </>
+  );
+}
 const fields: Record<string, string[]> = {
   JOURNAL: ["Problem", "Investigation", "Solution", "Lesson", "Next action"],
   ADR: [
@@ -271,11 +351,17 @@ export function Growth({ token }: { token: string }) {
         </div>
         {message && <p role="status">{message}</p>}
       </section>
-      <section className="panel padded">
+      <section className="panel padded" aria-label="Learning roadmap">
         <h2>Learning roadmap · concept to code</h2>
         <p>
           Progress is self-reported and saved with your evidence; opening a
           lesson does not mark it complete.
+        </p>
+        <p className="muted">
+          Source and walkthrough links open the public ATLAS examples on GitHub
+          in a new tab and follow the main branch. They do not open or import
+          your selected repository, execute an exercise, or change your recorded
+          progress.
         </p>
         <div className="learning-grid">
           {curriculum.map((item, i) => {
@@ -287,7 +373,7 @@ export function Growth({ token }: { token: string }) {
               <article key={item.area}>
                 <h3>{item.area}</h3>
                 <p>{item.concept}</p>
-                <code>{item.source}</code>
+                <PublicLearningEvidence item={item} />
                 <p>{item.exercise}</p>
                 <div className="button-row">
                   <button
@@ -331,34 +417,35 @@ export function Growth({ token }: { token: string }) {
           })}
         </div>
       </section>
-      <section className="panel padded" id="review-mode">
+      <section
+        className="panel padded"
+        id="review-mode"
+        aria-label="Technical review mode"
+      >
         <h2>Technical review mode</h2>
         <p>
           Deterministic questions are grounded in the implementation. Feedback
           checks rubric term coverage and suggests evidence to verify; it does
           not grade correctness or infer your skill.
         </p>
-        <label>
-          Review area
-          <select
-            value={topic}
-            onChange={(e) => {
-              setTopic(Number(e.target.value));
-              setAnswer("");
-              setEvaluated(false);
-            }}
-          >
-            {curriculum.map((c, i) => (
-              <option value={i} key={c.area}>
-                {c.area}
-              </option>
-            ))}
-          </select>
-        </label>
+        <label htmlFor="review-area">Review area</label>
+        <select
+          id="review-area"
+          value={topic}
+          onChange={(e) => {
+            setTopic(Number(e.target.value));
+            setAnswer("");
+            setEvaluated(false);
+          }}
+        >
+          {curriculum.map((c, i) => (
+            <option value={i} key={c.area}>
+              {c.area}
+            </option>
+          ))}
+        </select>
         <h3>{active.question}</h3>
-        <p>
-          Evidence to inspect: <code>{active.source}</code>
-        </p>
+        <PublicLearningEvidence item={active} />
         <label>
           Your technical answer
           <textarea
@@ -383,8 +470,8 @@ export function Growth({ token }: { token: string }) {
             {active.rubric.map((term) => (
               <p key={term}>
                 {text.includes(term) ? "Mentioned" : "Discuss and substantiate"}
-                : <strong>{term}</strong>. Verify the claim against{" "}
-                <code>{active.source}</code> and its tests.
+                : <strong>{term}</strong>. Verify the claim against the linked
+                public implementation and its tests.
               </p>
             ))}
             <p className="callout">

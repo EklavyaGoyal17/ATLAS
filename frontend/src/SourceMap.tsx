@@ -56,8 +56,9 @@ export function SourceMap({
         {names.map((name) => {
           const p = positions.get(name)!,
             edge =
-              visible.find((e) => e.from === name) ??
-              visible.find((e) => e.to === name);
+              // Drawing limits must not discard a displayed node's indexed evidence.
+              edges.find((e) => e.from === name) ??
+              edges.find((e) => e.to === name);
           return (
             <g
               key={name}

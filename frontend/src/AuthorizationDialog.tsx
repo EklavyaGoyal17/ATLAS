@@ -49,7 +49,7 @@ export function Authorize({
       >
         <label htmlFor="amount">Amount in minor units</label>
         <input
-          autoFocus
+          data-modal-initial-focus
           id="amount"
           type="text"
           inputMode="numeric"

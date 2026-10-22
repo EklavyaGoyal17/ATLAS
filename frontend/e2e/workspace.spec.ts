@@ -83,7 +83,13 @@ test("architecture review resolves source declarations and exports the approved 
     await page
       .getByRole("button", { name: "Import repository", exact: true })
       .click();
-    snapshot = await (await imported).json();
+    const importResponse = await imported;
+    expect(
+      importResponse.ok(),
+      `Import returned HTTP ${importResponse.status()}`,
+    ).toBeTruthy();
+    snapshot = await importResponse.json();
+    expect(snapshot.id).toMatch(/^[0-9a-f-]{36}$/);
     await expect(review.locator(".architecture-summary")).toContainText(
       "resolved types",
       { timeout: 20000 },

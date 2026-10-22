@@ -14,6 +14,8 @@ Local import has a ten-second processing budget and one active worker, with no q
 
 Secret masking and prompt-injection detection are heuristic. Private-key files are withheld, common credential assignments and known key formats are masked, and instruction-like files are excluded from assistant retrieval. Review the exact excerpts before transmission; scanners cannot establish that a repository is free of secrets. Keep the approved checkout stable during import; portable path checks do not fully prevent hostile concurrent filesystem replacement.
 
+The source-map overview draws at most 24 type names and 48 edges. Each displayed node selects field evidence from the complete bounded approved edge list, so truncating the drawing does not remove its navigation target. Enter and Space activate that evidence. The target is a field declaration involving the name; use qualified Architecture review for declaration identity across packages.
+
 ## No-model mode
 
 The **Change impact explorer** accepts up to twenty exact indexed file paths. Select `PaymentStore.java`, then choose **Analyze selected files** to inspect direct and transitive dependent Java types, including the field lines supporting one shortest dependency path. Select a source link to inspect the evidence or export the snapshot-bound report. A file without a resolved type, including Markdown or TypeScript, is listed as unrepresented; it has unknown impact under this analysis. Changing selections discards old and pending results, and reimport starts a new review. The API rejects requests for a different snapshot.

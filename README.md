@@ -62,6 +62,8 @@ ATLAS can explore frontend, backend, library and full-stack projects; payments a
 
 **Repository inventory** shows indexed language/file/line/redacted-byte counts, filters and source links. Declared dependencies cover npm, Maven and conservative Python requirements / Go `require` syntax. Python/Go entries navigate to their exact source lines; unsupported syntax and output limits are explicit. Metadata identity checks and distinct analysis component keys keep replacement imports from displaying stale inventory or duplicate controls.
 
+The bounded source map keeps navigation evidence even when the related type or edge is outside the drawn overview. Engineering growth links all fourteen learning areas to public ATLAS implementation files and walkthroughs; those examples follow `main` and do not import code or record progress. Dialogs put focus on the intended input, wrap Tab/Shift+Tab within their controls and restore the connected opener when dismissed.
+
 `backend/.../eventing` owns outbox delivery, consumer receipts, worker control and experiments. The notification sink is entirely local. Ticks are simulation units; crash injection omits a commit/ack boundary and does not terminate the JVM. The separate restart script restarts the real API container to verify durable recovery.
 
 ![ATLAS console displaying persisted synthetic transactions](docs/images/overview.png)

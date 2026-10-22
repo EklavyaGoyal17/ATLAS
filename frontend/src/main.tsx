@@ -695,7 +695,7 @@ function App() {
         >
           <label htmlFor="jump">Search navigation</label>
           <input
-            autoFocus
+            data-modal-initial-focus
             id="jump"
             placeholder="Payments, ledger, field guide…"
             value={search}
