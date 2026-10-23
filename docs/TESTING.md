@@ -10,6 +10,14 @@ Frontend: TypeScript compilation and Vite production build. Playwright drives th
 
 ## Verification record
 
+### Restored incident summaries and ADR history — 23 October 2026
+
+The application-backup drill now creates a complete ADR with two different revision bodies and captures its revisions alongside a deterministic incident summary. Before backup it verifies three usable baseline/affected measurements and checks every cited child span against the retained trace/span pair. After restore, a fresh API must return exactly the same summary, documents and ADR revisions; the existing complete table/sequence fingerprints and recovery probes still apply.
+
+The expanded drill passed locally with all five migrations, a 43,142-byte generated dump and `cleanupVerified: true` (`.runtime/summary-adr-restore-drill.log`). Node syntax validation passed. This checks restoration into fresh isolated resources, not an in-place restore of user data. No runtime application code, dependency or migration changed.
+
+The preceding implementation commit `8482b00ea9825a60fc7c7db687d71fcca0535a9d` passed both jobs in [hosted run 39829131888](https://github.com/EklavyaGoyal17/ATLAS/actions/runs/39829131888): 227 backend cases without skips, 23 frontend unit cases, 12 backup helpers, all 62 browser workflows, restart/restore checks and source/runtime-image vulnerability gates. That exact run verifies the implementation checkpoint; the expanded drill is checked separately on its own publication.
+
 ### Full master-prompt acceptance audit — 22 October 2026
 
 The supplied master prompt was compared requirement by requirement with source, tests and deliverables; [PROMPT_ACCEPTANCE](PROMPT_ACCEPTANCE.md) records phases 0–8, all seven module areas, all seventeen mandatory test categories and deliberate operating limits. Four partial capabilities were completed: saved incident summaries with actual trace/span citations; bounded operation-specific HTTP measurements; structured, explicitly self-reported technical-review evidence; and six required ADR fields with strict calendar-date validation before SQL. No model, private journal retrieval or imported-code execution was introduced.

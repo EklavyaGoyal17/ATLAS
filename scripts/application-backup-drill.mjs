@@ -282,8 +282,14 @@ async function capturedState(api, fixture) {
     diagramRevisions: await api(
       `/workspace/documents/${fixture.diagramId}/revisions`,
     ),
+    adrRevisions: await api(
+      `/workspace/documents/${fixture.adrId}/revisions`,
+    ),
     incidentEvidence: await api(
       `/observability/incidents/${fixture.incidentId}/evidence`,
+    ),
+    incidentSummary: await api(
+      `/assistant/incidents/${fixture.incidentId}/summary`,
     ),
   };
 }
@@ -329,6 +335,29 @@ async function seed(api) {
   assert.equal(step.outcome, "CRASH_AFTER_COMMIT");
   const hook = await api(`/webhooks/demo/${eventId}`, "POST");
   assert.equal(hook.effects, 1);
+  const adrId = randomUUID();
+  const adrBody = {
+    Context: "Generated workspace needs a reproducible recovery exercise.",
+    Decision: "Restore only into a fresh isolated database.",
+    Alternatives: "In-place restore was considered and rejected.",
+    Tradeoffs: "An extra API startup costs time but verifies application readback.",
+    Consequences: "Existing user data remains untouched.",
+    "Review date": "2027-01-23",
+  };
+  for (const version of [0, 1]) {
+    await api(`/workspace/documents/${adrId}`, "PUT", {
+      kind: "ADR",
+      title: "Generated backup recovery decision",
+      expectedVersion: version,
+      body: {
+        ...adrBody,
+        Consequences:
+          version === 0
+            ? adrBody.Consequences
+            : "Existing user data remains untouched; verify cleanup after failure.",
+      },
+    });
+  }
   const journalId = randomUUID(),
     diagramId = randomUUID();
   await api(`/workspace/documents/${journalId}`, "PUT", {
@@ -388,6 +417,7 @@ async function seed(api) {
     eventId,
     journalId,
     diagramId,
+    adrId,
     incidentId: incident.id,
     authorization,
     authorizationKey,
@@ -396,6 +426,28 @@ async function seed(api) {
     captured,
   };
   const state = await capturedState(api, fixture);
+  assert.equal(state.adrRevisions.length, 2);
+  assert.equal(state.incidentSummary.id, incident.id);
+  assert.equal(state.incidentSummary.mode, "DETERMINISTIC_SAVED_EVIDENCE");
+  assert.equal(state.incidentSummary.evidenceAvailable, true);
+  assert.equal(state.incidentSummary.baseline.measuredSamples, 3);
+  assert.equal(state.incidentSummary.affected.measuredSamples, 3);
+  const retainedTraceIds = new Set(
+    state.incidentEvidence.spans.map((span) => span.traceId),
+  );
+  const spanCitations = state.incidentSummary.findings
+    .flatMap((finding) => finding.citations)
+    .filter((citation) => citation.spanId);
+  assert.ok(spanCitations.length > 0, "Generated summary must cite retained spans");
+  for (const citation of spanCitations) {
+    assert.ok(retainedTraceIds.has(citation.traceId));
+    assert.ok(
+      state.incidentEvidence.spans.some(
+        (span) =>
+          span.traceId === citation.traceId && span.spanId === citation.spanId,
+      ),
+    );
+  }
   assert.equal(state.payment.postings.length, 2);
   assert.ok(state.reconciliation.every((row) => row.balanced));
   const dollars = state.reconciliation.find((row) => row.currency === "USD");
@@ -686,6 +738,8 @@ async function main() {
         "capture/refund ledger readback",
         "journal revisions and diagram",
         "identical archived incident evidence",
+        "identical recomputed incident summary and retained trace/span citations",
+        "complete ADR and both revision bodies",
         "immutable idempotency replays",
         "commit-before-ack recovery without duplicate effect",
         "signed webhook receipt deduplication",
